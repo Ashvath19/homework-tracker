@@ -21,7 +21,7 @@ export function nextClassDay(d, letter) {
 const MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
 const MONTH_RE = '(jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\\.?';
 const LOOKBACK_DAYS = 10;
-export const LP_VERSION = 3; // 2: files, descriptions, lesson-plan links. 3: borrow matching links
+export const LP_VERSION = 4; // 2: files, descriptions, lesson-plan links. 3: borrow matching links
 
 const pad = (n) => String(n).padStart(2, '0');
 const ymdOf = (y, m, d) => {
@@ -78,6 +78,7 @@ function decode(s) {
 function htmlToLines(h) {
   const t = h
     .replace(/<(script|style)[\s\S]*?<\/\1>/gi, '')
+    .replace(/<p[^>]*>(\s|&nbsp;|<br\s*\/?>)*<\/p>/gi, '\n¶\n') // an empty paragraph = a visible gap
     .replace(/<a\b[^>]*?href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_, href, txt) => `⟬${txt}⟭⟦${href}⟧`)
     .replace(/<h[1-6][^>]*>/gi, '\n§').replace(/<\/h[1-6]>/gi, '\n')
     .replace(/<li[^>]*>/gi, '\n•')
@@ -89,8 +90,9 @@ function htmlToLines(h) {
     const text = raw.replace(/⟦[^⟧]*⟧/g, '').replace(/[⟬⟭]/g, '').replace(/^[\s§•]+/, '').replace(/\s+/g, ' ').trim();
     let shown = text;
     try { shown = decodeURIComponent(text); } catch {}
-    return { text: shown, heading: raw.trim().startsWith('§'), links, linkOnly: !!links.length && !bare };
-  }).filter((l) => l.text);
+    const blank = raw.trim() === '¶';
+    return { text: blank ? '' : shown, heading: raw.trim().startsWith('§'), links, linkOnly: !!links.length && !bare, blank };
+  }).filter((l) => l.text || l.blank); // keep visible gaps: a big gap ends an item's attachments
 }
 
 const FILLER = /^(n\/?a|none|no homework|nothing|tbd|tba|-+|—|complete\s*\.{2,}|\.{2,}|…)\.?$/i;
@@ -115,7 +117,10 @@ export function extractHomework(html, baseUrl = '') {
     out.push(last);
   };
 
+  let blanks = 0;
   for (const l of lines) {
+    if (l.blank) { if (++blanks >= 2) last = null; continue; }
+    blanks = 0;
     const hw = l.text.match(/^(home\s*work|hw)\s*(?:assignments?)?\s*[:\-–]?\s*(.*)$/i);
     if (hw && (l.heading || l.text.length < 40 || /^(home\s*work|hw)\s*:/i.test(l.text))) {
       inHw = true;
@@ -144,7 +149,7 @@ export function extractHomework(html, baseUrl = '') {
   }
   // Lines elsewhere in the chapter that have links ("Answer Prelab Questions - Student Lab Packet"),
   // so homework without its own link can borrow the matching one.
-  const related = lines.filter((l) => l.links.length && !l.linkOnly).map((l) => ({ text: l.text, links: l.links.map(resolve).filter(Boolean) }));
+  const related = lines.filter((l) => !l.blank && l.links.length && !l.linkOnly).map((l) => ({ text: l.text, links: l.links.map(resolve).filter(Boolean) }));
   const items = out.slice(0, 10);
   for (const it of items) {
     if (it.links.length) continue;
@@ -334,7 +339,9 @@ export async function diffLessonPlans(state, token, moodleUserId) {
         for (const { text: rawText, links } of items) {
           const text = titleWithoutDue(rawText);
           const { files, desc: linkedDesc } = await resolveLinks(links);
-          const desc = linkedDesc || (rawText !== text || rawText.length > 60 ? rawText : '');
+          // only show the original line as instructions if it says more than the title + due date
+          const extra = rawText.replace(text, '').replace(/[(\[]?\s*\bdue\b[\s\S]*$/i, '').trim();
+          const desc = linkedDesc || (extra.length > 10 ? rawText : '');
           const link = files[0]?.url || null;
           const id = prefix + hash(text);
           if (seen.has(id)) continue;
