@@ -3,7 +3,10 @@ name: Check Moodle
 on:
   schedule:
     - cron: '17 * * * *' # every hour
-    - cron: '5 3 * * *'  # evening reminder: 7:05pm PST / 8:05pm PDT
+    # 6pm reminder. GitHub runs on UTC with no daylight saving, so try at both 01:00 and 02:00 UTC;
+    # the site only sends once it's 6pm or later in California, and only once a day.
+    - cron: '0 1 * * *'
+    - cron: '0 2 * * *'
   workflow_dispatch:
 
 jobs:
@@ -17,5 +20,5 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           MODE=sync
-          if [ "${{ github.event.schedule }}" = "5 3 * * *" ]; then MODE=remind; fi
+          case "${{ github.event.schedule }}" in "0 1 * * *"|"0 2 * * *") MODE=remind ;; esac
           curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" "$SITE_URL/api/sync?mode=$MODE"

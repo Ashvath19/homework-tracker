@@ -2,7 +2,7 @@
 // POST /api/sync?mode=remind → evening "due tomorrow" notifications (hourly job only)
 import {
   redis, K, getState, putState, mergeState, getProfile, saveProfile, currentUser, isCron,
-  decrypt, sendPush, ymd, addDays, dueLabel,
+  decrypt, sendPush, ymd, addDays, dueLabel, TZ,
 } from './_lib.js';
 import { diffWithMoodle } from './_moodle.js';
 import { diffLessonPlans, LP_VERSION } from './_lessons.js';
@@ -89,7 +89,11 @@ export async function syncUser(uid, { notify }) {
   return { checked: eventCount, changed: changedTasks.length, added: newTasks.length };
 }
 
+const REMIND_HOUR = 18; // 6pm school time
+
 async function remindUser(uid) {
+  const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: '2-digit', hourCycle: 'h23' }).format(new Date()));
+  if (hour < REMIND_HOUR) return { skipped: `too early (${hour}:00)` };
   const s = await getState(uid);
   const today = ymd(new Date());
   if (s.meta.lastRemind === today) return { skipped: 'already sent today' };
