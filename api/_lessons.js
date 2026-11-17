@@ -4,6 +4,7 @@
 import crypto from 'node:crypto';
 import { COLORS, ymd, addDays } from './_lib.js';
 import { ws, MOODLE_BASE, guessTag, cleanCourseName, tidyName } from './_moodle.js';
+import { courseMaterials, studyFor } from './_study.js';
 import { activityDetails, linksIn, cleanFileUrl, isMoodleFile, dedupeFiles, cmidFromUrl } from './_details.js';
 import SCHOOL from './_schoolDays.json' with { type: 'json' };
 
@@ -21,7 +22,7 @@ export function nextClassDay(d, letter) {
 const MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
 const MONTH_RE = '(jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\\.?';
 const LOOKBACK_DAYS = 10;
-export const LP_VERSION = 4; // 2: files, descriptions, lesson-plan links. 3: borrow matching links
+export const LP_VERSION = 5; // 2: files, descriptions, lesson-plan links. 3: borrow matching links
 
 const pad = (n) => String(n).padStart(2, '0');
 const ymdOf = (y, m, d) => {
@@ -95,6 +96,8 @@ function htmlToLines(h) {
   }).filter((l) => l.text || l.blank); // keep visible gaps: a big gap ends an item's attachments
 }
 
+// friendly notes, not homework: "Enjoy your Thanksgiving break!"
+const NOT_HOMEWORK = /^(enjoy|have a (great|good|nice|wonderful|restful|blessed)|happy |rest up|relax|merry|good luck|see you|no (homework|hw)\b)/i;
 const FILLER = /^(n\/?a|none|no homework|nothing|tbd|tba|-+|—|complete\s*\.{2,}|\.{2,}|…)\.?$/i;
 const DUE_RE = new RegExp(`\\bdue\\s*:?\\s*(?:by\\s+|on\\s+)?(?:[a-z]+day,?\\s*)?${MONTH_RE}\\s*\\d{1,2}`, 'i');
 
@@ -136,7 +139,7 @@ export function extractHomework(html, baseUrl = '') {
     }
     if (inHw && (l.heading || (/:$/.test(l.text) && l.text.length < 45))) { inHw = false; last = null; continue; }
     if (inHw) {
-      if (FILLER.test(l.text) || l.text.length < 3) continue;
+      if (FILLER.test(l.text) || NOT_HOMEWORK.test(l.text) || l.text.length < 3) continue;
       if (/^(lesson plans?|homework|class ?work)( and| &)? .{0,30}subject to change/i.test(l.text)) continue;
       add(l.text, l.links);
       continue;
@@ -213,12 +216,17 @@ export async function diffLessonPlans(state, token, moodleUserId) {
   const firstRun = !state.meta.lpInitialized;
 
   const courses = await ws(token, 'core_enrol_get_users_courses', { userid: moodleUserId });
-  const active = courses.filter((c) => c.visible !== 0 && !(c.enddate && c.enddate * 1000 < now));
+  // Moodle's course end dates are often stale (AP CS A says 2021), so a course counts as current
+  // if it has a lesson-plan book for this school year.
+  const active = courses.filter((c) => c.visible !== 0);
+  const thisYear = schoolYearStart('');
 
   const classes = new Map(state.classes.filter((c) => c.moodleId).map((c) => [c.moodleId, c]));
   const tasks = new Map(state.tasks.map((t) => [t.id, t]));
   const usedColors = new Set(state.classes.filter((c) => !c.deleted).map((c) => c.color));
   const changedClasses = [], changedTasks = [], newTasks = [];
+  // newest version of an item in this sync (so later passes build on earlier ones)
+  const latest = (id) => { for (let i = changedTasks.length - 1; i >= 0; i--) if (changedTasks[i].id === id) return changedTasks[i]; return tasks.get(id); };
 
   for (const course of active) {
     let contents;
@@ -226,7 +234,8 @@ export async function diffLessonPlans(state, token, moodleUserId) {
     if (!Array.isArray(contents)) continue;
     const books = contents
       .filter((s) => /lesson\s*plan/i.test(s.name || ''))
-      .flatMap((s) => (s.modules || []).filter((m) => m.modname === 'book' && m.visible !== 0 && m.uservisible !== false));
+      .flatMap((s) => (s.modules || []).filter((m) => m.modname === 'book' && m.visible !== 0 && m.uservisible !== false))
+      .filter((b) => schoolYearStart(b.name) === thisYear);
     if (!books.length) continue;
 
     // course modules by id, so "mod/resource/view.php?id=…" links can become the actual file
@@ -258,6 +267,13 @@ export async function diffLessonPlans(state, token, moodleUserId) {
 
     let cls = classes.get(course.id);
     if (cls?.deleted) continue; // you deleted this class
+    if (!cls) {
+      const color = COLORS.find((c) => !usedColors.has(c)) || COLORS[classes.size % COLORS.length];
+      usedColors.add(color);
+      cls = { id: `moodle-c${course.id}`, moodleId: course.id, name: cleanCourseName(course.fullname), color, updatedAt: now };
+      classes.set(course.id, cls);
+      changedClasses.push(cls);
+    }
     const tidy = cls && tidyName(cls, course.fullname);
     if (tidy) { cls = { ...cls, name: tidy, updatedAt: now }; classes.set(course.id, cls); changedClasses.push(cls); }
     const ab = cls?.day === 'B' ? 1 : 0; // chapter titles list the A-day date first, then the B-day date
@@ -322,14 +338,6 @@ export async function diffLessonPlans(state, token, moodleUserId) {
         }
         cache[cacheKey] = file.timemodified;
 
-        if (!cls) {
-          const color = COLORS.find((c) => !usedColors.has(c)) || COLORS[classes.size % COLORS.length];
-          usedColors.add(color);
-          cls = { id: `moodle-c${course.id}`, moodleId: course.id, name: cleanCourseName(course.fullname), color, updatedAt: now };
-          classes.set(course.id, cls);
-          changedClasses.push(cls);
-        }
-
         // Moodle assignments in this class, to avoid listing the same thing twice
         const assignmentNames = [...tasks.values(), ...changedTasks]
           .filter((t) => t.source === 'moodle' && t.classId === cls.id && !t.deleted && (t.moodleTitle || t.title).length >= 8)
@@ -384,7 +392,8 @@ export async function diffLessonPlans(state, token, moodleUserId) {
     // links to it, or else the last class day on/before it's due.
     if (cls && courseChapters.length) {
       const ordered = courseChapters.slice().sort((a, b) => a.dates[ab].localeCompare(b.dates[ab]));
-      for (const t of [...tasks.values(), ...changedTasks.filter((x) => !tasks.has(x.id))]) {
+      for (const id of new Set([...tasks.keys(), ...changedTasks.map((x) => x.id)])) {
+        const t = latest(id);
         if (t.classId !== cls.id || t.source !== 'moodle' || t.deleted || !t.due) continue;
         const named = t.cmid && lessonLinks[t.cmid];
         const byDate = [...ordered].reverse().find((c) => c.dates[ab] <= t.due && c.dates[ab] >= addDays(t.due, -14));
@@ -394,6 +403,25 @@ export async function diffLessonPlans(state, token, moodleUserId) {
         }
       }
     }
+
+    // Classes whose lesson plans use one date per day (AP CS A) don't need the A/B question.
+    const single = courseChapters.length > 0 && courseChapters.every((c) => c.dates[0] === c.dates[1]);
+    if (!!cls.singleDay !== single) {
+      cls = { ...cls, singleDay: single, updatedAt: now };
+      classes.set(course.id, cls);
+      changedClasses.push(cls);
+    }
+
+    // Quizzes and tests: practice + study material from anywhere on the course page.
+    const materials = courseMaterials(contents);
+    for (const id of new Set([...tasks.keys(), ...changedTasks.map((x) => x.id)])) {
+      const t = latest(id);
+      if (!t || t.classId !== cls.id || t.deleted || t.done || (t.tag !== 'quiz' && t.tag !== 'test')) continue;
+      const study = studyFor(t, materials);
+      if (JSON.stringify(study) !== JSON.stringify(t.study || [])) changedTasks.push({ ...t, study, updatedAt: now });
+    }
   }
-  return { changedClasses, changedTasks, newTasks, lpSeen: cache, lpAssign: lessonLinks };
+  // keep only the newest version of each item
+  const final = [...new Map(changedTasks.map((t) => [t.id, t])).values()];
+  return { changedClasses: [...new Map(changedClasses.map((c) => [c.id, c])).values()], changedTasks: final, newTasks, lpSeen: cache, lpAssign: lessonLinks };
 }

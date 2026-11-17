@@ -276,9 +276,11 @@ function taskRow(t, showClass) {
   const due = dueInfo(t.due);
   const tag = TAGS[t.tag] || TAGS.homework;
   const title = `<span class="tag tag-${t.tag || 'homework'}">${tag.label}</span>${esc(t.title)}`;
-  const meta = (showClass && c) || t.notes || t.doneBy === 'moodle' || t.source === 'lesson' ? `<span class="task-meta">
+  const meta = (showClass && c) || t.notes || t.doneBy === 'moodle' || t.source === 'lesson' || t.files?.length || t.study?.length ? `<span class="task-meta">
           ${showClass && c ? `<span class="chip"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}</span>` : ''}
           ${t.source === 'lesson' && !t.done ? `<span title="From the lesson plan for ${esc(t.chapter || '')}">Lesson plan</span>` : ''}
+          ${!t.done && (t.study?.length) ? `<span>${t.study.length} study file${t.study.length === 1 ? '' : 's'}</span>` : ''}
+          ${!t.done && !t.study?.length && t.files?.length ? `<span>${t.files.length} file${t.files.length === 1 ? '' : 's'}</span>` : ''}
           ${t.notes ? `<span title="${esc(t.notes)}">Has notes</span>` : ''}
           ${t.done && t.doneBy === 'moodle' ? `<span>Submitted on Moodle</span>` : ''}
         </span>` : '';
@@ -399,7 +401,7 @@ function hero(allTodo, b) {
 
 // Classes from Moodle lesson plans need to know if you're in the A-day or B-day section.
 function dayPicker() {
-  const need = classes().filter((c) => c.moodleId && !c.day && tasks().some((t) => t.classId === c.id && t.source === 'lesson'));
+  const need = classes().filter((c) => c.moodleId && !c.day && !c.singleDay && tasks().some((t) => t.classId === c.id && t.source === 'lesson'));
   if (!need.length) return '';
   return `
     <section class="day-setup">
@@ -550,6 +552,19 @@ function descHtml(text) {
   return out.join('');
 }
 
+function fileList(title, list, cls = '') {
+  if (!list.length) return '';
+  return `
+      <section class="detail-files ${cls}">
+        <h3>${title} <span class="n">${list.length}</span></h3>
+        <ul>${list.map((f) => `
+          <li><a href="${esc(fileHref(f.url))}" target="_blank" rel="noopener">
+            <span class="kind">${fileKind(f)}</span><span class="fname">${esc(f.name)}</span>
+          </a></li>`).join('')}
+        </ul>
+      </section>`;
+}
+
 let detailId = null;
 function openDetail(id) {
   const t = state.tasks.find((x) => x.id === id);
@@ -560,6 +575,8 @@ function openDetail(id) {
   const files = t.files?.length ? t.files : (t.link ? [{ name: 'Linked file', url: t.link }] : []);
   const dueText = t.due ? parseDate(t.due).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }) : 'No due date';
   const lesson = t.lessonUrl || (t.source === 'lesson' ? t.url : null);
+  const fileUrls = new Set(files.map((f) => f.url));
+  const study = (t.study || []).filter((f) => !fileUrls.has(f.url));
   const lessonTitle = t.lessonTitle || t.chapter;
 
   $('#detail-body').innerHTML = `
@@ -571,15 +588,10 @@ function openDetail(id) {
     <h2>${esc(t.title)}</h2>
     <p class="detail-due ${!t.done && t.due && daysUntil(t.due) < 0 ? 'bad' : ''}">${t.done ? 'Done' : `Due ${esc(dueText)}`}${t.dueEstimated && !t.done ? ' (estimated)' : ''}</p>
 
-    ${files.length ? `
-      <section class="detail-files">
-        <h3>Files</h3>
-        <ul>${files.map((f) => `
-          <li><a href="${esc(fileHref(f.url))}" target="_blank" rel="noopener">
-            <span class="kind">${fileKind(f)}</span><span class="fname">${esc(f.name)}</span>
-          </a></li>`).join('')}
-        </ul>
-      </section>` : ''}
+    ${fileList('Files', files)}
+    ${(t.tag === 'quiz' || t.tag === 'test') ? (study.length
+      ? fileList(t.tag === 'test' ? 'Study materials' : 'Practice and review', study, 'study')
+      : `<p class="hint">No practice or study materials matched this ${t.tag} on the course page yet.</p>`) : ''}
 
     ${t.desc ? `<section class="detail-desc"><h3>Instructions</h3>${descHtml(t.desc)}</section>` : ''}
     ${!files.length && !t.desc ? `<p class="hint">Your teacher didn't post a description or files with this one. Check the lesson plan below.</p>` : ''}
