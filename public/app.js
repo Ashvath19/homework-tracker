@@ -470,7 +470,7 @@ function renderSettings() {
       <button class="btn" data-action="push-test" id="push-test" hidden>Send a test</button>
       <button class="link-btn" data-action="push-off" id="push-off" hidden>Turn off on this device</button>
     </div>
-    <p class="hint">You'll get a ping when new homework shows up on Moodle, and a reminder around 7pm listing what's due tomorrow.</p>`;
+    <p class="hint">You'll get a ping when new homework shows up on Moodle, and a reminder at 6pm listing what's due tomorrow.</p>`;
 
   const moodleCard = !ONLINE ? `<p>Moodle sync only works on the website version.</p>` : `
     <p>Connected as <b>${esc(moodle.name || 'you')}</b>. ${meta.lastSync ? `Last checked ${ago(meta.lastSync)}${meta.lastCount != null ? `, ${meta.lastCount} upcoming item${meta.lastCount === 1 ? '' : 's'}` : ''}.` : 'Not checked yet.'}
