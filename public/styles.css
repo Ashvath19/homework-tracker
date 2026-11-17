@@ -310,6 +310,7 @@ dialog legend { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-b
   .quick-add { flex-wrap: nowrap; }
   .quick-add input[name=title] { flex: 1 1 auto; min-width: 120px; }
   .quick-add select { flex: 0 1 auto; max-width: 190px; }
+  .quick-add select[name=tag] { flex: none; min-width: 124px; }
   .quick-add input[type=date] { flex: none; }
   .quick-add .primary { flex: none; }
 }
