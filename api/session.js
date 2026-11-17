@@ -9,8 +9,7 @@ export default async function handler(req, res) {
     const p = uid ? await getProfile(uid) : null;
     return res.json({
       authed: !!p,
-      user: p ? { id: uid, email: p.email, name: p.name, picture: p.picture } : null,
-      moodle: p?.moodle ? { connected: true, name: p.moodle.name } : { connected: false },
+      user: p ? { id: uid, name: p.name } : null,
       vapidPublicKey: process.env.VAPID_PUBLIC_KEY || null,
     });
   }

@@ -22,7 +22,7 @@ let userId = ONLINE ? safeGet('hw-last-user') : 'local';
 let state = loadLocal();
 let tagFilter = null;
 let authed = false;
-let me = null;              // { email, name, picture }
+let me = null;              // { id, name }
 let moodle = { connected: false };
 let meta = {};
 let vapidKey = null;
@@ -187,19 +187,36 @@ function render() {
   else renderDashboard();
 }
 
+let loginMode = 'key';
 function renderLogin() {
-  const err = new URLSearchParams(location.search).get('autherror');
+  const keyForm = `
+    <form class="login-form" data-form="login-key">
+      <p class="hint">Log in with your <b>Moodle key</b>. It also lets the site pull your homework from Moodle.</p>
+      <ol class="hint steps">
+        <li>On a computer, log in to <a href="https://learn.vcs.net" target="_blank" rel="noopener">learn.vcs.net</a></li>
+        <li>Open <a href="https://learn.vcs.net/user/managetoken.php" target="_blank" rel="noopener">your Security keys page</a></li>
+        <li>Copy the key in the <b>Moodle mobile web service</b> row</li>
+      </ol>
+      <input name="token" class="field" placeholder="Paste your Moodle key" autocomplete="off" spellcheck="false" required>
+      <button class="primary">Log in</button>
+      <p class="hint">No key in that row? Install the Moodle app on your phone, sign in once with Student Login, then reload the page.</p>
+      <button type="button" class="link-btn" data-action="login-mode" data-mode="code">Already logged in on another device? Use a code →</button>
+    </form>`;
+  const codeForm = `
+    <form class="login-form" data-form="login-code">
+      <p class="hint">On a device where you're already logged in, open <b>Settings → Log in on another device</b> and type the code here.</p>
+      <input name="code" class="field code-input" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" placeholder="123456" autocomplete="one-time-code" required>
+      <button class="primary">Log in</button>
+      <button type="button" class="link-btn" data-action="login-mode" data-mode="key">← Log in with a Moodle key instead</button>
+    </form>`;
   $('#main').innerHTML = `
     <div class="login">
       <h1>📚 Homework</h1>
       <p class="hint" style="text-align:center;margin:0 0 6px">All your homework in one place, pulled from Moodle automatically.</p>
-      <a class="google-btn" href="/api/auth/google">
-        <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.6-.4-3.9z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.6-.4-3.9z"/></svg>
-        Sign in with Google
-      </a>
-      ${err ? `<p class="err">${esc(err)}</p>
-        <p class="hint">If your school account is blocked, try a personal Gmail account instead.</p>` : ''}
+      ${loginMode === 'code' ? codeForm : keyForm}
+      <p class="err" id="login-err"></p>
     </div>`;
+  $('#main input')?.focus();
 }
 
 function renderSidebar(active) {
@@ -293,9 +310,8 @@ function renderDashboard() {
       <div class="page-header"><h2>Dashboard</h2></div>
       <p class="subtitle">Everything you have due, in date order.</p>
       <div class="empty">
-        <p>${ONLINE ? 'Connect Moodle and your classes and homework show up here automatically. Or add classes yourself.' : 'Start by adding your classes.'}</p>
+        <p>${ONLINE ? 'Nothing from Moodle yet. Your classes show up here as soon as teachers post assignments, or you can add them yourself.' : 'Start by adding your classes.'}</p>
         <div class="row" style="justify-content:center">
-          ${ONLINE && !moodle.connected ? `<a class="primary" href="#/settings" style="text-decoration:none">Connect Moodle</a>` : ''}
           <button class="btn" data-action="new-class">Add a class</button>
         </div>
       </div>`;
@@ -376,29 +392,20 @@ function renderSettings() {
     </div>
     <p class="hint">You'll get a ping when new homework shows up on Moodle, and a reminder around 7pm listing what's due tomorrow.</p>`;
 
-  const moodleCard = !ONLINE ? `<p>Moodle sync only works on the website version.</p>`
-    : !moodle.connected ? `
-    <p>Connect your Moodle account and your homework shows up here on its own, every hour.</p>
-    <ol>
-      <li>Log in to <a href="https://learn.vcs.net" target="_blank" rel="noopener">learn.vcs.net</a> on a computer.</li>
-      <li>Open <a href="https://learn.vcs.net/user/managetoken.php" target="_blank" rel="noopener">your Security keys page</a>.</li>
-      <li>Copy the key in the <b>Moodle mobile web service</b> row and paste it below.</li>
-    </ol>
-    <p class="hint">Don't see that row? Install the Moodle app on your phone, sign in once with Student Login, then reload the page.</p>
-    <form class="row" data-form="moodle">
-      <input name="token" placeholder="Paste your Moodle key" autocomplete="off" spellcheck="false" required class="field">
-      <button class="primary">Connect</button>
-    </form>
-    <p class="hint">Your key is encrypted before it's saved and only used to read your assignments. You can disconnect anytime, or reset the key on that Moodle page.</p>`
-    : `
+  const moodleCard = !ONLINE ? `<p>Moodle sync only works on the website version.</p>` : `
     <p>Connected as <b>${esc(moodle.name || 'you')}</b>. ${meta.lastSync ? `Last checked ${ago(meta.lastSync)}${meta.lastCount != null ? ` · ${meta.lastCount} upcoming item${meta.lastCount === 1 ? '' : 's'}` : ''}.` : 'Not checked yet.'}
        It checks again every hour on its own.</p>
     ${meta.lastError ? `<p class="bad">${esc(meta.lastError)}</p>` : ''}
-    <div class="row">
-      <button class="btn" data-action="sync-now">Check Moodle now</button>
-      <button class="link-btn" data-action="moodle-off">Disconnect Moodle</button>
-    </div>
-    <p class="hint">Things you submit on Moodle get checked off automatically.</p>`;
+    <div class="row"><button class="btn" data-action="sync-now">Check Moodle now</button></div>
+    <p class="hint">Things you submit on Moodle get checked off automatically.</p>
+    <details ${meta.lastError ? 'open' : ''}>
+      <summary class="hint">Replace your Moodle key</summary>
+      <p class="hint">Use this if your key stopped working or you reset it on Moodle. Your other devices will be logged out and need a new code.</p>
+      <form class="row" data-form="moodle">
+        <input name="token" placeholder="Paste your new Moodle key" autocomplete="off" spellcheck="false" required class="field">
+        <button class="btn">Save key</button>
+      </form>
+    </details>`;
 
   $('#main').innerHTML = `
     <div class="page-header"><h2>Settings</h2></div>
@@ -412,7 +419,9 @@ function renderSettings() {
       <p class="hint">Import adds everything from a backup file to what's already here.</p>
     </section>
     ${ONLINE && me ? `<section class="card"><h3>👤 Account</h3>
-      <p>Signed in as <b>${esc(me.name)}</b> (${esc(me.email)}).</p>
+      <p>Logged in as <b>${esc(me.name)}</b>.</p>
+      <div class="row"><button class="primary" data-action="link-device">📱 Log in on another device</button></div>
+      <div id="link-code"></div>
       <div class="row">
         <button class="btn" data-action="logout">Log out</button>
         <button class="danger" data-action="delete-account">Delete my account</button>
@@ -616,11 +625,12 @@ document.addEventListener('click', async (e) => {
       forgetDevice();
       break;
     }
-    case 'moodle-off': {
-      if (!confirm('Disconnect Moodle? Your homework list stays, but new homework stops showing up automatically.')) break;
-      await api('DELETE', '/api/moodle').catch((err) => toast(err.message));
-      moodle = { connected: false };
-      render();
+    case 'login-mode': loginMode = el.dataset.mode; render(); break;
+    case 'link-device': {
+      try {
+        const { code, expiresAt } = await api('POST', '/api/link');
+        showLinkCode(code, expiresAt);
+      } catch (err) { toast(err.message); }
       break;
     }
   }
@@ -639,22 +649,36 @@ document.addEventListener('change', (e) => {
 
 document.addEventListener('submit', async (e) => {
   const f = e.target;
+  if (f.dataset.form === 'login-key' || f.dataset.form === 'login-code') {
+    e.preventDefault();
+    const btn = f.querySelector('button.primary');
+    btn.disabled = true;
+    btn.textContent = f.dataset.form === 'login-key' ? 'Checking with Moodle…' : 'Logging in…';
+    try {
+      const body = f.dataset.form === 'login-key' ? { token: f.token.value } : { code: f.code.value };
+      await api('POST', '/api/login', body);
+      await boot(true);
+    } catch (err) {
+      $('#login-err').textContent = err.message;
+      btn.disabled = false;
+      btn.textContent = 'Log in';
+    }
+    return;
+  }
   if (f.dataset.form === 'moodle') {
     e.preventDefault();
     const btn = f.querySelector('button');
     btn.disabled = true;
-    btn.textContent = 'Connecting…';
+    btn.textContent = 'Checking…';
     try {
-      const r = await api('POST', '/api/moodle', { token: f.token.value });
-      moodle = { connected: true, name: r.name };
+      await api('POST', '/api/moodle', { token: f.token.value });
       await pull();
-      toast(r.added ? `Connected! Found ${r.added} assignment${r.added === 1 ? '' : 's'}.` : 'Connected to Moodle');
-      location.hash = '#/';
+      toast('New key saved');
       render();
     } catch (err) {
       toast(err.message);
       btn.disabled = false;
-      btn.textContent = 'Connect';
+      btn.textContent = 'Save key';
     }
     return;
   }
@@ -692,6 +716,25 @@ $('#import-file').addEventListener('change', async (e) => {
   }
 });
 
+function showLinkCode(code, expiresAt) {
+  const box = $('#link-code');
+  if (!box) return;
+  clearInterval(showLinkCode.t);
+  const tick = () => {
+    const left = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
+    if (!document.body.contains(box)) return clearInterval(showLinkCode.t);
+    box.innerHTML = left ? `
+      <div class="link-box">
+        <div class="link-code">${code.slice(0, 3)} ${code.slice(3)}</div>
+        <p class="hint">On your other device, open this site, tap <b>Use a code</b>, and type this in.
+        Expires in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}. Works once.</p>
+      </div>` : `<p class="hint">That code expired. Make a new one if you still need it.</p>`;
+    if (!left) clearInterval(showLinkCode.t);
+  };
+  tick();
+  showLinkCode.t = setInterval(tick, 1000);
+}
+
 // ---------- startup ----------
 function userChanged(id) {
   if (userId === id) return false;
@@ -712,13 +755,14 @@ function registerSW() {
   if (ONLINE && 'serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(console.warn);
 }
 
-async function boot() {
-  window.addEventListener('hashchange', render);
-  if (!ONLINE) { render(); return; }
-
-  // stay fresh: re-check when you come back to the tab/app, and every few minutes while open
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) pull(); });
-  setInterval(() => { if (!document.hidden) pull(); }, 3 * 60 * 1000);
+async function boot(again = false) {
+  if (!again) {
+    window.addEventListener('hashchange', render);
+    if (!ONLINE) { render(); return; }
+    // stay fresh: re-check when you come back to the tab/app, and every few minutes while open
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) pull(); });
+    setInterval(() => { if (!document.hidden) pull(); }, 3 * 60 * 1000);
+  }
 
   authed = !!userId; // optimistic: show the last person's cached homework instantly
   render();
@@ -727,7 +771,7 @@ async function boot() {
     vapidKey = s.vapidPublicKey;
     authed = s.authed;
     me = s.user;
-    moodle = s.moodle || { connected: false };
+    moodle = me ? { connected: true, name: me.name } : { connected: false };
   } catch {
     return; // offline — keep showing the cached copy
   }

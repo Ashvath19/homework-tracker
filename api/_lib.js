@@ -11,17 +11,15 @@ export const redis = new Redis({
 // Every person's data lives under their own key prefix.
 export const K = {
   users: 'hw:users',                         // set of all user ids
-  profile: (u) => `hw:u:${u}:profile`,       // { email, name, picture, moodle: { tokenEnc, name, userid } }
+  profile: (u) => `hw:u:${u}:profile`,       // { name, moodle: { tokenEnc, fp, userid, invalid } }
   state: (u) => `hw:u:${u}:state`,           // { classes, tasks, meta }
   subs: (u) => `hw:u:${u}:subs`,             // push subscriptions (one per device)
-  session: (s) => `hw:sess:${s}`,            // session id → user id
+  session: (s) => `hw:sess:${s}`,            // session id → { uid, fp }
+  link: (c) => `hw:link:${c}`,               // 6-digit phone login code → user id
 };
 export const TZ = process.env.TIMEZONE || 'America/Los_Angeles';
 export const COLORS = ['#e5484d', '#f76b15', '#e2a336', '#30a46c', '#12a594', '#0090ff', '#8e4ec6', '#d6409f'];
 
-export function baseUrl(req) {
-  return (process.env.PUBLIC_URL || `https://${req.headers['x-forwarded-host'] || req.headers.host}`).replace(/\/$/, '');
-}
 
 // ---------- homework state ----------
 export async function getState(uid) {
@@ -66,9 +64,13 @@ export async function deleteUser(uid) {
 const COOKIE = 'hw_sid';
 const SESSION_DAYS = 180;
 
-export async function startSession(res, uid) {
+// fp = fingerprint of the Moodle key at login time. When you reset your key on Moodle and
+// log in with the new one, every session made with the old key stops working.
+export const fingerprint = (token) => crypto.createHash('sha256').update(token).digest('hex').slice(0, 20);
+
+export async function startSession(res, uid, fp) {
   const sid = crypto.randomBytes(32).toString('base64url');
-  await redis.set(K.session(sid), uid, { ex: SESSION_DAYS * 86400 });
+  await redis.set(K.session(sid), { uid, fp }, { ex: SESSION_DAYS * 86400 });
   res.setHeader('Set-Cookie', `${COOKIE}=${sid}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}`);
 }
 export async function endSession(req, res) {
@@ -79,7 +81,18 @@ export async function endSession(req, res) {
 export async function currentUser(req) {
   const sid = req.cookies?.[COOKIE];
   if (!sid || !/^[\w-]{20,}$/.test(sid)) return null;
-  return (await redis.get(K.session(sid))) || null;
+  const sess = await redis.get(K.session(sid));
+  if (!sess?.uid) return null;
+  const profile = await getProfile(sess.uid);
+  if (!profile?.moodle || profile.moodle.fp !== sess.fp) return null; // key was replaced, or account deleted
+  return sess.uid;
+}
+
+// Simple per-IP limit on failed attempts (login keys, phone codes).
+export async function tooManyFailures(req, bucket, max) {
+  const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || 'unknown';
+  const key = `hw:fail:${bucket}:${ip}:${new Date().toISOString().slice(0, 13)}`;
+  return { blocked: (Number(await redis.get(key)) || 0) >= max, async record() { await redis.incr(key); await redis.expire(key, 3600); } };
 }
 // Returns the signed-in user's id, or sends 401 and returns null.
 export async function requireUser(req, res) {
