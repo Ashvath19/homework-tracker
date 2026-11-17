@@ -57,6 +57,15 @@ export function cleanCourseName(name) {
     .trim() || name;
 }
 
+// Classes made before we stripped teacher names ("Biology Honors - Dr. Noren") get tidied,
+// unless you renamed them yourself.
+export function tidyName(cls, fullname) {
+  const clean = cleanCourseName(fullname);
+  if (cls.renamed || cls.name === clean) return null;
+  const raw = fullname.replace(/&amp;/g, '&');
+  return cls.name === raw || cls.name.startsWith(`${clean} - `) || cls.name.startsWith(`${clean} – `) ? clean : null;
+}
+
 // Moodle often uses 12:00 AM to mean "end of the previous day".
 function dueFromTimestamp(sec) {
   const d = new Date(sec * 1000);
@@ -84,6 +93,8 @@ export async function diffWithMoodle(state, token) {
 
     let cls = classes.get(ev.course.id);
     if (cls?.deleted) continue; // you deleted this class — leave it alone
+    const tidy = cls && tidyName(cls, ev.course.fullname);
+    if (tidy) { cls = { ...cls, name: tidy, updatedAt: now }; classes.set(ev.course.id, cls); changedClasses.push(cls); }
     if (!cls) {
       const color = COLORS.find((c) => !usedColors.has(c)) || COLORS[classes.size % COLORS.length];
       usedColors.add(color);

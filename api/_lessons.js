@@ -3,7 +3,7 @@
 // and has a "Homework" heading followed by a list.
 import crypto from 'node:crypto';
 import { COLORS, ymd, addDays } from './_lib.js';
-import { ws, MOODLE_BASE, guessTag, cleanCourseName } from './_moodle.js';
+import { ws, MOODLE_BASE, guessTag, cleanCourseName, tidyName } from './_moodle.js';
 import SCHOOL from './_schoolDays.json' with { type: 'json' };
 
 // A/B/C letter for each school day, from the VCHS campus calendar. Days off aren't listed.
@@ -206,6 +206,8 @@ export async function diffLessonPlans(state, token, moodleUserId) {
 
     let cls = classes.get(course.id);
     if (cls?.deleted) continue; // you deleted this class
+    const tidy = cls && tidyName(cls, course.fullname);
+    if (tidy) { cls = { ...cls, name: tidy, updatedAt: now }; classes.set(course.id, cls); changedClasses.push(cls); }
     const ab = cls?.day === 'B' ? 1 : 0; // chapter titles list the A-day date first, then the B-day date
 
     for (const book of books) {
