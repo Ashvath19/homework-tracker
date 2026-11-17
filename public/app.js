@@ -594,7 +594,7 @@ function openDetail(id) {
       : `<p class="hint">No practice or study materials matched this ${t.tag} on the course page yet.</p>`) : ''}
 
     ${t.desc ? `<section class="detail-desc"><h3>Instructions</h3>${descHtml(t.desc)}</section>` : ''}
-    ${!files.length && !t.desc ? `<p class="hint">Your teacher didn't post a description or files with this one. Check the lesson plan below.</p>` : ''}
+    ${!files.length && !t.desc && !study.length ? `<p class="hint">Your teacher didn't post a description or files with this one. Check the lesson plan below.</p>` : ''}
     ${t.notes ? `<section class="detail-desc"><h3>Your notes</h3>${descHtml(t.notes)}</section>` : ''}
 
     ${lesson ? `<a class="detail-lesson" href="${esc(lesson)}" target="_blank" rel="noopener">
