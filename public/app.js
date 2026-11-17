@@ -15,7 +15,7 @@ const TAGS = {
   test:     { label: 'Test',     icon: '🚨', big: true },
 };
 const tagOptions = (sel) => Object.entries(TAGS)
-  .map(([k, t]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${t.icon} ${t.label}</option>`).join('');
+  .map(([k, t]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${t.label}</option>`).join('');
 
 // Each person's cached copy is stored separately, so siblings sharing a computer don't mix lists.
 let userId = ONLINE ? safeGet('hw-last-user') : 'local';
@@ -191,30 +191,34 @@ let loginMode = 'key';
 function renderLogin() {
   const keyForm = `
     <form class="login-form" data-form="login-key">
-      <p class="hint">Log in with your <b>Moodle key</b>. It also lets the site pull your homework from Moodle.</p>
-      <ol class="hint steps">
-        <li>On a computer, log in to <a href="https://learn.vcs.net" target="_blank" rel="noopener">learn.vcs.net</a></li>
-        <li>Open <a href="https://learn.vcs.net/user/managetoken.php" target="_blank" rel="noopener">your Security keys page</a></li>
-        <li>Copy the key in the <b>Moodle mobile web service</b> row</li>
-      </ol>
-      <input name="token" class="field" placeholder="Paste your Moodle key" autocomplete="off" spellcheck="false" required>
+      <label for="key">Moodle key</label>
+      <input id="key" name="token" class="field" autocomplete="off" autocapitalize="off" spellcheck="false" required>
       <button class="primary">Log in</button>
-      <p class="hint">No key in that row? Install the Moodle app on your phone, sign in once with Student Login, then reload the page.</p>
-      <button type="button" class="link-btn" data-action="login-mode" data-mode="code">Already logged in on another device? Use a code →</button>
+      <details>
+        <summary>Where do I find my key?</summary>
+        <ol>
+          <li>Log in to <a href="https://learn.vcs.net" target="_blank" rel="noopener">learn.vcs.net</a> on a computer.</li>
+          <li>Open <a href="https://learn.vcs.net/user/managetoken.php" target="_blank" rel="noopener">Preferences, then Security keys</a>.</li>
+          <li>In the <b>Moodle mobile web service</b> row, copy the <b>key</b>: a 32-character code of letters and numbers.</li>
+        </ol>
+        No row like that? Sign in to the Moodle app on your phone once, then reload the page.
+      </details>
+      <button type="button" class="link-btn switch" data-action="login-mode" data-mode="code">Log in with a code from another device</button>
     </form>`;
   const codeForm = `
     <form class="login-form" data-form="login-code">
-      <p class="hint">On a device where you're already logged in, open <b>Settings → Log in on another device</b> and type the code here.</p>
-      <input name="code" class="field code-input" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" placeholder="123456" autocomplete="one-time-code" required>
+      <label for="code">6-digit code</label>
+      <input id="code" name="code" class="field code-input" inputmode="numeric" maxlength="7" autocomplete="one-time-code" required>
       <button class="primary">Log in</button>
-      <button type="button" class="link-btn" data-action="login-mode" data-mode="key">← Log in with a Moodle key instead</button>
+      <p class="hint">Get a code on a device where you're already logged in, under Settings.</p>
+      <button type="button" class="link-btn switch" data-action="login-mode" data-mode="key">Log in with your Moodle key instead</button>
     </form>`;
   $('#main').innerHTML = `
     <div class="login">
-      <h1>📚 Homework</h1>
-      <p class="hint" style="text-align:center;margin:0 0 6px">All your homework in one place, pulled from Moodle automatically.</p>
+      <h1><span class="hl">Homework</span></h1>
+      <p class="lede">Your Moodle assignments, sorted by when they're due.</p>
       ${loginMode === 'code' ? codeForm : keyForm}
-      <p class="err" id="login-err"></p>
+      <p class="err" id="login-err" role="alert"></p>
     </div>`;
   $('#main input')?.focus();
 }
@@ -258,7 +262,7 @@ function filterBar(list) {
   return `<div class="filters">
     <button class="filter ${!tagFilter ? 'on' : ''}" data-action="filter" data-tag="">All</button>
     ${Object.entries(TAGS).filter(([k]) => used.has(k) || k === tagFilter).map(([k, t]) =>
-      `<button class="filter ${tagFilter === k ? 'on' : ''}" data-action="filter" data-tag="${k}">${t.icon} ${t.label}</button>`).join('')}
+      `<button class="filter ${tagFilter === k ? 'on' : ''}" data-action="filter" data-tag="${k}">${t.label}</button>`).join('')}
   </div>`;
 }
 const applyFilter = (list) => tagFilter ? list.filter((t) => (t.tag || 'homework') === tagFilter) : list;
@@ -271,15 +275,15 @@ function taskRow(t, showClass) {
     <li class="task ${t.done ? 'done' : ''} ${tag.big ? 'big' : ''}" data-id="${t.id}">
       <input type="checkbox" data-action="toggle" ${t.done ? 'checked' : ''} aria-label="Mark done">
       <button class="task-body" data-action="edit-task">
-        <span class="task-title"><span class="tag tag-${t.tag || 'homework'}">${tag.icon} ${tag.label}</span>${esc(t.title)}</span>
+        <span class="task-title"><span class="tag tag-${t.tag || 'homework'}">${tag.label}</span>${esc(t.title)}</span>
         ${(showClass && c) || t.notes || t.doneBy === 'moodle' ? `<span class="task-meta">
           ${showClass && c ? `<span class="chip"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}</span>` : ''}
-          ${t.notes ? `<span title="${esc(t.notes)}">📝 notes</span>` : ''}
-          ${t.done && t.doneBy === 'moodle' ? `<span>✓ submitted on Moodle</span>` : ''}
+          ${t.notes ? `<span title="${esc(t.notes)}">Has notes</span>` : ''}
+          ${t.done && t.doneBy === 'moodle' ? `<span>Submitted on Moodle</span>` : ''}
         </span>` : ''}
       </button>
-      ${t.done ? '' : `<span class="due ${due.cls}">${due.label}</span>`}
-      ${t.url ? `<a class="ext" href="${esc(t.url)}" target="_blank" rel="noopener" title="Open in Moodle" aria-label="Open in Moodle">↗</a>` : ''}
+      ${t.done ? '' : `<span class="due ${due.cls}">${due.cls === 'today' ? `<span class="hl">${due.label}</span>` : due.label}</span>`}
+      ${t.url ? `<a class="ext" href="${esc(t.url)}" target="_blank" rel="noopener" title="Open in Moodle" aria-label="Open in Moodle">Open</a>` : ''}
     </li>`;
 }
 
@@ -334,8 +338,8 @@ function renderDashboard() {
   const weekCount = buckets.today.length + buckets.tomorrow.length + buckets.week.length;
   const summary = todo.length
     ? `${weekCount} due in the next 7 days` +
-      (buckets.late.length ? ` · <span class="bad">${buckets.late.length} overdue</span>` : '')
-    : 'All caught up 🎉';
+      (buckets.late.length ? `, <span class="bad">${buckets.late.length} overdue</span>` : '') + '.'
+    : "You're all caught up.";
 
   main.innerHTML = `
     <div class="page-header"><h2>Dashboard</h2></div>
@@ -364,7 +368,7 @@ function renderClass(c) {
       <h2>${esc(c.name)}</h2>
       <div class="actions"><button class="btn" data-action="edit-class" data-class="${c.id}">Edit class</button></div>
     </div>
-    <p class="subtitle">${todo.length ? `${todo.length} to do` : 'All caught up 🎉'}${late ? ` · <span class="bad">${late} overdue</span>` : ''}${c.moodleId ? ' · synced from Moodle' : ''}</p>
+    <p class="subtitle">${todo.length ? `${todo.length} to do` : "You're all caught up"}${late ? `, <span class="bad">${late} overdue</span>` : ''}.${c.moodleId ? ' Synced from Moodle.' : ''}</p>
     ${quickAddForm(c.id)}
     ${filterBar(allTodo)}
     ${todo.length ? group('To do', todo, false) : `<div class="empty"><p>No homework for ${esc(c.name)} right now.</p></div>`}
@@ -393,7 +397,7 @@ function renderSettings() {
     <p class="hint">You'll get a ping when new homework shows up on Moodle, and a reminder around 7pm listing what's due tomorrow.</p>`;
 
   const moodleCard = !ONLINE ? `<p>Moodle sync only works on the website version.</p>` : `
-    <p>Connected as <b>${esc(moodle.name || 'you')}</b>. ${meta.lastSync ? `Last checked ${ago(meta.lastSync)}${meta.lastCount != null ? ` · ${meta.lastCount} upcoming item${meta.lastCount === 1 ? '' : 's'}` : ''}.` : 'Not checked yet.'}
+    <p>Connected as <b>${esc(moodle.name || 'you')}</b>. ${meta.lastSync ? `Last checked ${ago(meta.lastSync)}${meta.lastCount != null ? `, ${meta.lastCount} upcoming item${meta.lastCount === 1 ? '' : 's'}` : ''}.` : 'Not checked yet.'}
        It checks again every hour on its own.</p>
     ${meta.lastError ? `<p class="bad">${esc(meta.lastError)}</p>` : ''}
     <div class="row"><button class="btn" data-action="sync-now">Check Moodle now</button></div>
@@ -409,18 +413,18 @@ function renderSettings() {
 
   $('#main').innerHTML = `
     <div class="page-header"><h2>Settings</h2></div>
-    <section class="card"><h3>🔔 Notifications</h3>${notif}</section>
-    <section class="card"><h3>🔄 Moodle</h3>${moodleCard}</section>
-    <section class="card"><h3>💾 Backup</h3>
+    <section class="card"><h3>Notifications</h3>${notif}</section>
+    <section class="card"><h3>Moodle</h3>${moodleCard}</section>
+    <section class="card"><h3>Backup</h3>
       <div class="row">
         <button class="btn" data-action="export">Export backup</button>
         <button class="btn" data-action="import">Import backup</button>
       </div>
       <p class="hint">Import adds everything from a backup file to what's already here.</p>
     </section>
-    ${ONLINE && me ? `<section class="card"><h3>👤 Account</h3>
+    ${ONLINE && me ? `<section class="card"><h3>Account</h3>
       <p>Logged in as <b>${esc(me.name)}</b>.</p>
-      <div class="row"><button class="primary" data-action="link-device">📱 Log in on another device</button></div>
+      <div class="row"><button class="primary" data-action="link-device">Log in on another device</button></div>
       <div id="link-code"></div>
       <div class="row">
         <button class="btn" data-action="logout">Log out</button>
@@ -439,7 +443,7 @@ async function refreshPushState() {
   if (!el) return;
   el.textContent = Notification.permission === 'denied'
     ? 'Notifications are blocked for this site. Allow them in your browser or System Settings, then reload.'
-    : on ? '✅ Notifications are on for this device.' : 'Notifications are off on this device.';
+    : on ? 'Notifications are on for this device.' : 'Notifications are off on this device.';
   $('#push-on').hidden = on || Notification.permission === 'denied';
   $('#push-test').hidden = !on;
   $('#push-off').hidden = !on;
@@ -600,7 +604,7 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'push-test': {
-      try { await api('POST', '/api/push?test=1'); toast('Sent! It should pop up in a few seconds.'); }
+      try { await api('POST', '/api/push?test=1'); toast('Test sent. It should appear in a few seconds.'); }
       catch (err) { toast(err.message); }
       break;
     }
@@ -655,6 +659,9 @@ document.addEventListener('submit', async (e) => {
     btn.disabled = true;
     btn.textContent = f.dataset.form === 'login-key' ? 'Checking with Moodle…' : 'Logging in…';
     try {
+      if (f.dataset.form === 'login-key' && /^webservice-/i.test(f.token.value.trim())) {
+        throw new Error("That's the key's name. Copy the key itself: the 32-character code in the same row.");
+      }
       const body = f.dataset.form === 'login-key' ? { token: f.token.value } : { code: f.code.value };
       await api('POST', '/api/login', body);
       await boot(true);
@@ -726,7 +733,7 @@ function showLinkCode(code, expiresAt) {
     box.innerHTML = left ? `
       <div class="link-box">
         <div class="link-code">${code.slice(0, 3)} ${code.slice(3)}</div>
-        <p class="hint">On your other device, open this site, tap <b>Use a code</b>, and type this in.
+        <p class="hint">On your other device, open this site, choose <b>Log in with a code</b>, and enter this.
         Expires in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}. Works once.</p>
       </div>` : `<p class="hint">That code expired. Make a new one if you still need it.</p>`;
     if (!left) clearInterval(showLinkCode.t);

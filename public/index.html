@@ -4,18 +4,21 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Homework Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap">
   <link rel="stylesheet" href="styles.css">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Homework">
-  <meta name="theme-color" content="#3e63dd">
+  <meta name="theme-color" content="#2747d0">
 </head>
 <body>
   <div class="app">
     <aside class="sidebar">
-      <h1 class="brand">📚 Homework</h1>
+      <h1 class="brand"><span class="hl">Homework</span></h1>
       <nav>
         <a href="#/" class="nav-link" data-route="/">Dashboard</a>
         <div class="nav-section">
@@ -25,7 +28,7 @@
         <div id="class-list"></div>
       </nav>
       <div class="sidebar-footer">
-        <a href="#/settings" class="nav-link" data-route="/settings">⚙️ Settings</a>
+        <a href="#/settings" class="nav-link" data-route="/settings">Settings</a>
         <span id="sync-status" class="sync-status"></span>
         <input type="file" id="import-file" accept="application/json" hidden>
       </div>
@@ -45,7 +48,7 @@
       <label>Type <select name="tag"></select></label>
       <label>Due date <input type="date" name="due"></label>
       <label>Notes <textarea name="notes" rows="4" placeholder="Pages, problems, links…"></textarea></label>
-      <a id="task-link" class="link-btn" target="_blank" rel="noopener" hidden>Open in Moodle ↗</a>
+      <a id="task-link" target="_blank" rel="noopener" hidden>Open in Moodle</a>
       <div class="dialog-actions">
         <button type="button" class="danger" data-action="delete-task">Delete</button>
         <span class="spacer"></span>
