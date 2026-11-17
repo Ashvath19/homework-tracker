@@ -8,21 +8,31 @@ export const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN,
 });
 
-const STATE_KEY = 'hw:state';
-const SUBS_KEY = 'hw:subs';
+// Every person's data lives under their own key prefix.
+export const K = {
+  users: 'hw:users',                         // set of all user ids
+  profile: (u) => `hw:u:${u}:profile`,       // { email, name, picture, moodle: { tokenEnc, name, userid } }
+  state: (u) => `hw:u:${u}:state`,           // { classes, tasks, meta }
+  subs: (u) => `hw:u:${u}:subs`,             // push subscriptions (one per device)
+  session: (s) => `hw:sess:${s}`,            // session id → user id
+};
 export const TZ = process.env.TIMEZONE || 'America/Los_Angeles';
 export const COLORS = ['#e5484d', '#f76b15', '#e2a336', '#30a46c', '#12a594', '#0090ff', '#8e4ec6', '#d6409f'];
 
-// ---------- state ----------
-export async function getState() {
-  const s = await redis.get(STATE_KEY);
+export function baseUrl(req) {
+  return (process.env.PUBLIC_URL || `https://${req.headers['x-forwarded-host'] || req.headers.host}`).replace(/\/$/, '');
+}
+
+// ---------- homework state ----------
+export async function getState(uid) {
+  const s = await redis.get(K.state(uid));
   return { classes: s?.classes || [], tasks: s?.tasks || [], meta: s?.meta || {} };
 }
-export async function putState(s) {
+export async function putState(uid, s) {
   // forget deleted items after 90 days so the data doesn't grow forever
   const cutoff = Date.now() - 90 * 86400000;
   const keep = (x) => !(x.deleted && (x.updatedAt || 0) < cutoff);
-  await redis.set(STATE_KEY, { classes: s.classes.filter(keep), tasks: s.tasks.filter(keep), meta: s.meta || {} });
+  await redis.set(K.state(uid), { classes: s.classes.filter(keep), tasks: s.tasks.filter(keep), meta: s.meta || {} });
 }
 
 // Last-write-wins merge by id, using each item's updatedAt. Deleted items stay as
@@ -40,52 +50,90 @@ export function mergeState(a, b) {
   return { classes: list(a.classes, b.classes), tasks: list(a.tasks, b.tasks), meta: a.meta || {} };
 }
 
-// ---------- auth ----------
-const sessionValue = () =>
-  crypto.createHmac('sha256', process.env.APP_PASSWORD || '').update('hw-session-v1').digest('hex');
+// ---------- profiles ----------
+export async function getProfile(uid) {
+  return (await redis.get(K.profile(uid))) || null;
+}
+export async function saveProfile(uid, p) {
+  await redis.set(K.profile(uid), p);
+}
+export async function deleteUser(uid) {
+  await redis.del(K.profile(uid), K.state(uid), K.subs(uid));
+  await redis.srem(K.users, uid);
+}
+
+// ---------- sessions ----------
+const COOKIE = 'hw_sid';
+const SESSION_DAYS = 180;
+
+export async function startSession(res, uid) {
+  const sid = crypto.randomBytes(32).toString('base64url');
+  await redis.set(K.session(sid), uid, { ex: SESSION_DAYS * 86400 });
+  res.setHeader('Set-Cookie', `${COOKIE}=${sid}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}`);
+}
+export async function endSession(req, res) {
+  const sid = req.cookies?.[COOKIE];
+  if (sid) await redis.del(K.session(sid));
+  res.setHeader('Set-Cookie', `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);
+}
+export async function currentUser(req) {
+  const sid = req.cookies?.[COOKIE];
+  if (!sid || !/^[\w-]{20,}$/.test(sid)) return null;
+  return (await redis.get(K.session(sid))) || null;
+}
+// Returns the signed-in user's id, or sends 401 and returns null.
+export async function requireUser(req, res) {
+  res.setHeader('Cache-Control', 'no-store');
+  const uid = await currentUser(req);
+  if (!uid) res.status(401).json({ error: 'login' });
+  return uid;
+}
 
 function safeEq(a, b) {
   const x = Buffer.from(String(a)), y = Buffer.from(String(b));
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
-export function checkPassword(pw) {
-  return !!process.env.APP_PASSWORD && safeEq(pw || '', process.env.APP_PASSWORD);
+// The hourly GitHub job proves itself with this secret.
+export function isCron(req) {
+  return !!process.env.CRON_SECRET && safeEq(req.headers.authorization || '', `Bearer ${process.env.CRON_SECRET}`);
 }
-export function isAuthed(req) {
-  const c = req.cookies?.hw_session;
-  if (process.env.APP_PASSWORD && c && safeEq(c, sessionValue())) return true;
-  const auth = req.headers.authorization || '';
-  return !!process.env.CRON_SECRET && safeEq(auth, `Bearer ${process.env.CRON_SECRET}`);
+
+// ---------- encryption for Moodle keys (AES-256-GCM) ----------
+function encKey() {
+  const k = process.env.ENCRYPTION_KEY;
+  if (!k || k.length !== 64) throw new Error('ENCRYPTION_KEY must be 64 hex characters');
+  return Buffer.from(k, 'hex');
 }
-export function setSession(res, on = true) {
-  res.setHeader('Set-Cookie', on
-    ? `hw_session=${sessionValue()}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=31536000`
-    : 'hw_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0');
+export function encrypt(text) {
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', encKey(), iv);
+  const ct = Buffer.concat([c.update(text, 'utf8'), c.final()]);
+  return [iv, c.getAuthTag(), ct].map((b) => b.toString('base64url')).join('.');
 }
-export function requireAuth(req, res) {
-  res.setHeader('Cache-Control', 'no-store');
-  if (isAuthed(req)) return true;
-  res.status(401).json({ error: 'login' });
-  return false;
+export function decrypt(blob) {
+  const [iv, tag, ct] = blob.split('.').map((s) => Buffer.from(s, 'base64url'));
+  const d = crypto.createDecipheriv('aes-256-gcm', encKey(), iv);
+  d.setAuthTag(tag);
+  return Buffer.concat([d.update(ct), d.final()]).toString('utf8');
 }
 
 // ---------- push notifications ----------
 const subKey = (endpoint) => crypto.createHash('sha256').update(endpoint).digest('hex').slice(0, 24);
 
-export async function addSubscription(sub) {
-  await redis.hset(SUBS_KEY, { [subKey(sub.endpoint)]: JSON.stringify(sub) });
+export async function addSubscription(uid, sub) {
+  await redis.hset(K.subs(uid), { [subKey(sub.endpoint)]: JSON.stringify(sub) });
 }
-export async function removeSubscription(endpoint) {
-  await redis.hdel(SUBS_KEY, subKey(endpoint));
+export async function removeSubscription(uid, endpoint) {
+  await redis.hdel(K.subs(uid), subKey(endpoint));
 }
-export async function sendPush(payload) {
+export async function sendPush(uid, payload) {
   if (!process.env.VAPID_PRIVATE_KEY) return 0;
   webpush.setVapidDetails(
     process.env.VAPID_SUBJECT || 'mailto:homework-tracker@example.com',
     process.env.VAPID_PUBLIC_KEY,
     process.env.VAPID_PRIVATE_KEY,
   );
-  const subs = (await redis.hgetall(SUBS_KEY)) || {};
+  const subs = (await redis.hgetall(K.subs(uid))) || {};
   let sent = 0;
   await Promise.all(Object.entries(subs).map(async ([k, raw]) => {
     const sub = typeof raw === 'string' ? JSON.parse(raw) : raw;
@@ -93,7 +141,7 @@ export async function sendPush(payload) {
       await webpush.sendNotification(sub, JSON.stringify(payload), { TTL: 6 * 3600 });
       sent++;
     } catch (e) {
-      if (e.statusCode === 404 || e.statusCode === 410) await redis.hdel(SUBS_KEY, k); // device unsubscribed
+      if (e.statusCode === 404 || e.statusCode === 410) await redis.hdel(K.subs(uid), k); // device unsubscribed
       else console.error('push failed', e.statusCode, e.body);
     }
   }));
@@ -106,8 +154,7 @@ export function ymd(date) {
 }
 export function addDays(ymdStr, n) {
   const [y, m, d] = ymdStr.split('-').map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d + n));
-  return dt.toISOString().slice(0, 10);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
 }
 export function dueLabel(due) {
   if (!due) return 'no due date';

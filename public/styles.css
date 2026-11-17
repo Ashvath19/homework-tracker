@@ -224,3 +224,14 @@ body.locked main { max-width: none; display: grid; place-items: center; min-heig
   main { padding-top: 20px; }
   .quick-add > * { flex: 1 1 100%; }
 }
+
+/* Google sign-in + forms */
+.google-btn {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  border: 1px solid var(--border); background: var(--panel); color: var(--text);
+  border-radius: 8px; padding: 10px 14px; text-decoration: none; font-weight: 600;
+}
+.google-btn:hover { background: var(--hover); }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.field { flex: 1 1 240px; border: 1px solid var(--border); background: var(--bg); border-radius: 8px; padding: 8px 10px; font-family: ui-monospace, monospace; font-size: 13px; }
+.card a { color: var(--accent); }

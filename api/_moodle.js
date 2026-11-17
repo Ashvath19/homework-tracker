@@ -1,7 +1,7 @@
 // Reads upcoming work from Moodle using the same web service the Moodle mobile app uses.
 import { COLORS, ymd, TZ } from './_lib.js';
 
-const BASE = (process.env.MOODLE_URL || 'https://learn.vcs.net').replace(/\/$/, '');
+export const MOODLE_BASE = (process.env.MOODLE_URL || 'https://learn.vcs.net').replace(/\/$/, '');
 
 function flatten(obj, prefix, out) {
   for (const [k, v] of Object.entries(obj)) {
@@ -12,23 +12,22 @@ function flatten(obj, prefix, out) {
   return out;
 }
 
-export async function ws(fn, params = {}) {
-  if (!process.env.MOODLE_TOKEN) throw new Error('MOODLE_TOKEN is not set');
+export async function ws(token, fn, params = {}) {
   const body = flatten(params, '', new URLSearchParams({
-    wstoken: process.env.MOODLE_TOKEN, wsfunction: fn, moodlewsrestformat: 'json',
+    wstoken: token, wsfunction: fn, moodlewsrestformat: 'json',
   }));
-  const r = await fetch(`${BASE}/webservice/rest/server.php`, { method: 'POST', body });
+  const r = await fetch(`${MOODLE_BASE}/webservice/rest/server.php`, { method: 'POST', body });
   const j = await r.json();
   if (j && j.exception) throw new Error(`${fn}: ${j.message}`);
   return j;
 }
 
 // Everything on the Moodle "Timeline": things you still need to do, from 2 weeks ago onward.
-export async function fetchTimeline(fromSec) {
+export async function fetchTimeline(token, fromSec) {
   const events = [];
   let after;
   for (let page = 0; page < 6; page++) {
-    const res = await ws('core_calendar_get_action_events_by_timesort', {
+    const res = await ws(token, 'core_calendar_get_action_events_by_timesort', {
       timesortfrom: fromSec, limitnum: 50, ...(after ? { aftereventid: after } : {}),
     });
     events.push(...(res.events || []));
@@ -64,10 +63,10 @@ function dueFromTimestamp(sec) {
 }
 
 // Compares Moodle's timeline with our saved state and returns only the items that changed.
-export async function diffWithMoodle(state) {
+export async function diffWithMoodle(state, token) {
   const now = Date.now();
   const fromSec = Math.floor(now / 1000) - 14 * 86400;
-  const events = await fetchTimeline(fromSec);
+  const events = await fetchTimeline(token, fromSec);
 
   const classes = new Map(state.classes.filter((c) => c.moodleId).map((c) => [c.moodleId, c]));
   const tasks = new Map(state.tasks.map((t) => [t.id, t]));

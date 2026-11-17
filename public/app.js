@@ -17,22 +17,32 @@ const TAGS = {
 const tagOptions = (sel) => Object.entries(TAGS)
   .map(([k, t]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${t.icon} ${t.label}</option>`).join('');
 
+// Each person's cached copy is stored separately, so siblings sharing a computer don't mix lists.
+let userId = ONLINE ? safeGet('hw-last-user') : 'local';
 let state = loadLocal();
 let tagFilter = null;
 let authed = false;
+let me = null;              // { email, name, picture }
+let moodle = { connected: false };
 let meta = {};
 let vapidKey = null;
+
+function safeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function safeSet(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} }
+const storageKey = () => (userId && userId !== 'local' ? `${STORAGE_KEY}:${userId}` : STORAGE_KEY);
 
 // ---------- local storage ----------
 function loadLocal() {
   try {
-    const s = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (ONLINE && !userId) return { classes: [], tasks: [] };
+    const s = JSON.parse(localStorage.getItem(storageKey()));
     if (s && Array.isArray(s.classes) && Array.isArray(s.tasks)) return { classes: s.classes, tasks: s.tasks };
   } catch {}
   return { classes: [], tasks: [] };
 }
 function saveLocal() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+  if (ONLINE && !userId) return;
+  safeSet(storageKey(), JSON.stringify(state));
 }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const touch = (o) => { o.updatedAt = Date.now(); return o; };
@@ -178,13 +188,18 @@ function render() {
 }
 
 function renderLogin() {
+  const err = new URLSearchParams(location.search).get('autherror');
   $('#main').innerHTML = `
-    <form class="login" data-form="login">
+    <div class="login">
       <h1>📚 Homework</h1>
-      <input type="password" name="password" placeholder="Password" autocomplete="current-password" required autofocus>
-      <button class="primary">Log in</button>
-      <p class="err" id="login-err"></p>
-    </form>`;
+      <p class="hint" style="text-align:center;margin:0 0 6px">All your homework in one place, pulled from Moodle automatically.</p>
+      <a class="google-btn" href="/api/auth/google">
+        <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.6-.4-3.9z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.6-.4-3.9z"/></svg>
+        Sign in with Google
+      </a>
+      ${err ? `<p class="err">${esc(err)}</p>
+        <p class="hint">If your school account is blocked, try a personal Gmail account instead.</p>` : ''}
+    </div>`;
 }
 
 function renderSidebar(active) {
@@ -199,7 +214,8 @@ function renderSidebar(active) {
       <span>${esc(c.name)}</span>
       <span class="count">${counts[c.id] || ''}</span>
     </a>`).join('') || `<p class="subtitle" style="margin:4px 10px;font-size:13px">No classes yet</p>`;
-  $('#sync-status').textContent = meta.lastError ? '⚠️ Moodle sync problem'
+  $('#sync-status').textContent = !moodle.connected ? (ONLINE ? 'Moodle not connected' : '')
+    : meta.lastError ? '⚠️ Moodle sync problem'
     : meta.lastSync ? `Moodle checked ${ago(meta.lastSync)}` : '';
 }
 
@@ -277,8 +293,11 @@ function renderDashboard() {
       <div class="page-header"><h2>Dashboard</h2></div>
       <p class="subtitle">Everything you have due, in date order.</p>
       <div class="empty">
-        <p>${ONLINE ? 'Your classes will show up here once Moodle is connected, or you can add them yourself.' : 'Start by adding your classes.'}</p>
-        <button class="primary" data-action="new-class">Add a class</button>
+        <p>${ONLINE ? 'Connect Moodle and your classes and homework show up here automatically. Or add classes yourself.' : 'Start by adding your classes.'}</p>
+        <div class="row" style="justify-content:center">
+          ${ONLINE && !moodle.connected ? `<a class="primary" href="#/settings" style="text-decoration:none">Connect Moodle</a>` : ''}
+          <button class="btn" data-action="new-class">Add a class</button>
+        </div>
       </div>`;
     return;
   }
@@ -357,17 +376,34 @@ function renderSettings() {
     </div>
     <p class="hint">You'll get a ping when new homework shows up on Moodle, and a reminder around 7pm listing what's due tomorrow.</p>`;
 
-  const moodle = !ONLINE ? `<p>Moodle sync only works on the website version.</p>` : `
-    <p>${meta.lastSync ? `Last checked ${ago(meta.lastSync)}${meta.lastCount != null ? ` · ${meta.lastCount} upcoming item${meta.lastCount === 1 ? '' : 's'} on Moodle` : ''}.` : 'Not checked yet.'}
+  const moodleCard = !ONLINE ? `<p>Moodle sync only works on the website version.</p>`
+    : !moodle.connected ? `
+    <p>Connect your Moodle account and your homework shows up here on its own, every hour.</p>
+    <ol>
+      <li>Log in to <a href="https://learn.vcs.net" target="_blank" rel="noopener">learn.vcs.net</a> on a computer.</li>
+      <li>Open <a href="https://learn.vcs.net/user/managetoken.php" target="_blank" rel="noopener">your Security keys page</a>.</li>
+      <li>Copy the key in the <b>Moodle mobile web service</b> row and paste it below.</li>
+    </ol>
+    <p class="hint">Don't see that row? Install the Moodle app on your phone, sign in once with Student Login, then reload the page.</p>
+    <form class="row" data-form="moodle">
+      <input name="token" placeholder="Paste your Moodle key" autocomplete="off" spellcheck="false" required class="field">
+      <button class="primary">Connect</button>
+    </form>
+    <p class="hint">Your key is encrypted before it's saved and only used to read your assignments. You can disconnect anytime, or reset the key on that Moodle page.</p>`
+    : `
+    <p>Connected as <b>${esc(moodle.name || 'you')}</b>. ${meta.lastSync ? `Last checked ${ago(meta.lastSync)}${meta.lastCount != null ? ` · ${meta.lastCount} upcoming item${meta.lastCount === 1 ? '' : 's'}` : ''}.` : 'Not checked yet.'}
        It checks again every hour on its own.</p>
-    ${meta.lastError ? `<p class="bad">Last problem: ${esc(meta.lastError)}</p>` : ''}
-    <div class="row"><button class="btn" data-action="sync-now">Check Moodle now</button></div>
+    ${meta.lastError ? `<p class="bad">${esc(meta.lastError)}</p>` : ''}
+    <div class="row">
+      <button class="btn" data-action="sync-now">Check Moodle now</button>
+      <button class="link-btn" data-action="moodle-off">Disconnect Moodle</button>
+    </div>
     <p class="hint">Things you submit on Moodle get checked off automatically.</p>`;
 
   $('#main').innerHTML = `
     <div class="page-header"><h2>Settings</h2></div>
     <section class="card"><h3>🔔 Notifications</h3>${notif}</section>
-    <section class="card"><h3>🔄 Moodle</h3>${moodle}</section>
+    <section class="card"><h3>🔄 Moodle</h3>${moodleCard}</section>
     <section class="card"><h3>💾 Backup</h3>
       <div class="row">
         <button class="btn" data-action="export">Export backup</button>
@@ -375,7 +411,13 @@ function renderSettings() {
       </div>
       <p class="hint">Import adds everything from a backup file to what's already here.</p>
     </section>
-    ${ONLINE ? `<p><button class="link-btn" data-action="logout">Log out of this device</button></p>` : ''}`;
+    ${ONLINE && me ? `<section class="card"><h3>👤 Account</h3>
+      <p>Signed in as <b>${esc(me.name)}</b> (${esc(me.email)}).</p>
+      <div class="row">
+        <button class="btn" data-action="logout">Log out</button>
+        <button class="danger" data-action="delete-account">Delete my account</button>
+      </div>
+    </section>` : ''}`;
 
   if (ONLINE && pushSupported && vapidKey && !(iOS && !installed)) refreshPushState();
 }
@@ -565,9 +607,19 @@ document.addEventListener('click', async (e) => {
     }
     case 'logout': {
       await api('DELETE', '/api/session').catch(() => {});
-      authed = false;
-      state = { classes: [], tasks: [] };
-      saveLocal();
+      forgetDevice();
+      break;
+    }
+    case 'delete-account': {
+      if (!confirm('Delete your account and all your homework? This can\'t be undone.')) break;
+      try { await api('DELETE', '/api/account'); } catch (err) { toast(err.message); break; }
+      forgetDevice();
+      break;
+    }
+    case 'moodle-off': {
+      if (!confirm('Disconnect Moodle? Your homework list stays, but new homework stops showing up automatically.')) break;
+      await api('DELETE', '/api/moodle').catch((err) => toast(err.message));
+      moodle = { connected: false };
       render();
       break;
     }
@@ -587,16 +639,22 @@ document.addEventListener('change', (e) => {
 
 document.addEventListener('submit', async (e) => {
   const f = e.target;
-  if (f.dataset.form === 'login') {
+  if (f.dataset.form === 'moodle') {
     e.preventDefault();
+    const btn = f.querySelector('button');
+    btn.disabled = true;
+    btn.textContent = 'Connecting…';
     try {
-      await api('POST', '/api/session', { password: f.password.value });
-      authed = true;
-      render();
+      const r = await api('POST', '/api/moodle', { token: f.token.value });
+      moodle = { connected: true, name: r.name };
       await pull();
-      registerSW();
+      toast(r.added ? `Connected! Found ${r.added} assignment${r.added === 1 ? '' : 's'}.` : 'Connected to Moodle');
+      location.hash = '#/';
+      render();
     } catch (err) {
-      $('#login-err').textContent = err.message;
+      toast(err.message);
+      btn.disabled = false;
+      btn.textContent = 'Connect';
     }
     return;
   }
@@ -635,6 +693,21 @@ $('#import-file').addEventListener('change', async (e) => {
 });
 
 // ---------- startup ----------
+function userChanged(id) {
+  if (userId === id) return false;
+  userId = id;
+  safeSet('hw-last-user', id);
+  return true;
+}
+function forgetDevice() {
+  if (userId && userId !== 'local') safeSet(storageKey(), null);
+  safeSet('hw-last-user', null);
+  userId = null;
+  authed = false;
+  me = null;
+  state = { classes: [], tasks: [] };
+  render();
+}
 function registerSW() {
   if (ONLINE && 'serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(console.warn);
 }
@@ -647,17 +720,21 @@ async function boot() {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) pull(); });
   setInterval(() => { if (!document.hidden) pull(); }, 3 * 60 * 1000);
 
-  authed = true; // optimistic: show cached homework instantly
+  authed = !!userId; // optimistic: show the last person's cached homework instantly
   render();
   try {
     const s = await api('GET', '/api/session');
     vapidKey = s.vapidPublicKey;
     authed = s.authed;
+    me = s.user;
+    moodle = s.moodle || { connected: false };
   } catch {
     return; // offline — keep showing the cached copy
   }
+  if (!authed) { forgetDevice(); return; }
+  if (userChanged(me.id)) state = loadLocal();
+  if (location.search) history.replaceState(null, '', location.pathname + location.hash);
   render();
-  if (!authed) return;
   registerSW();
   await pull();
 }
