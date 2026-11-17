@@ -199,7 +199,8 @@ function renderLogin() {
         <ol>
           <li>Log in to <a href="https://learn.vcs.net" target="_blank" rel="noopener">learn.vcs.net</a> on a computer.</li>
           <li>Open <a href="https://learn.vcs.net/user/managetoken.php" target="_blank" rel="noopener">Preferences, then Security keys</a>.</li>
-          <li>In the <b>Moodle mobile web service</b> row, copy the <b>key</b>: a 32-character code of letters and numbers.</li>
+          <li>In the <b>Moodle mobile web service</b> row, click <b>Reset</b>.</li>
+          <li>Moodle shows your new key once, at the top of the page. Click <b>Copy to clipboard</b> and paste it here.</li>
         </ol>
         No row like that? Sign in to the Moodle app on your phone once, then reload the page.
       </details>
@@ -404,7 +405,7 @@ function renderSettings() {
     <p class="hint">Things you submit on Moodle get checked off automatically.</p>
     <details ${meta.lastError ? 'open' : ''}>
       <summary class="hint">Replace your Moodle key</summary>
-      <p class="hint">Use this if your key stopped working or you reset it on Moodle. Your other devices will be logged out and need a new code.</p>
+      <p class="hint">On Moodle's <a href="https://learn.vcs.net/user/managetoken.php" target="_blank" rel="noopener">Security keys page</a>, click Reset in the Moodle mobile web service row and copy the key it shows. Your other devices will be logged out and need a new code.</p>
       <form class="row" data-form="moodle">
         <input name="token" placeholder="Paste your new Moodle key" autocomplete="off" spellcheck="false" required class="field">
         <button class="btn">Save key</button>
