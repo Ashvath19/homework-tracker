@@ -1,59 +1,83 @@
-// POST /api/sync             → check Moodle for new/changed homework (runs hourly)
-// POST /api/sync?mode=remind → send the evening "due tomorrow" notification
-import { getState, putState, mergeState, requireAuth, sendPush, ymd, addDays, dueLabel } from './_lib.js';
+// POST /api/sync             → check Moodle now (you: just your account; hourly job: everyone)
+// POST /api/sync?mode=remind → evening "due tomorrow" notifications (hourly job only)
+import {
+  redis, K, getState, putState, mergeState, getProfile, saveProfile, currentUser, isCron,
+  decrypt, sendPush, ymd, addDays, dueLabel,
+} from './_lib.js';
 import { diffWithMoodle } from './_moodle.js';
 
 const ICONS = { homework: '📄', reading: '📖', essay: '✍️', lab: '🧪', project: '🛠️', quiz: '❓', test: '🚨' };
 
 export default async function handler(req, res) {
-  if (!requireAuth(req, res)) return;
+  res.setHeader('Cache-Control', 'no-store');
   const mode = req.query.mode === 'remind' ? 'remind' : 'sync';
-  try {
-    const result = mode === 'remind' ? await remind() : await sync();
-    res.json({ ok: true, ...result });
-  } catch (e) {
-    console.error(e);
-    if (mode === 'sync') {
-      const s = await getState();
-      s.meta = { ...s.meta, lastError: String(e.message || e), lastErrorAt: Date.now() };
-      await putState(s);
+
+  if (isCron(req)) {
+    const users = (await redis.smembers(K.users)) || [];
+    const results = {};
+    for (const uid of users) { // one at a time: a problem with one person never blocks the rest
+      try { results[uid] = mode === 'remind' ? await remindUser(uid) : await syncUser(uid, { notify: true }); }
+      catch (e) { results[uid] = { error: String(e.message || e) }; }
     }
+    return res.json({ ok: true, users: users.length, results: Object.values(results) });
+  }
+
+  const uid = await currentUser(req);
+  if (!uid) return res.status(401).json({ error: 'login' });
+  if (mode !== 'sync') return res.status(403).json({ error: 'not allowed' });
+  try {
+    res.json({ ok: true, ...(await syncUser(uid, { notify: false })) });
+  } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
 }
 
-async function sync() {
-  const before = await getState();
-  const { changedClasses, changedTasks, newTasks, eventCount } = await diffWithMoodle(before);
+export async function syncUser(uid, { notify }) {
+  const profile = await getProfile(uid);
+  if (!profile?.moodle?.tokenEnc) return { skipped: 'no moodle' };
+  const token = decrypt(profile.moodle.tokenEnc);
+
+  let diff;
+  try {
+    diff = await diffWithMoodle(await getState(uid), token);
+  } catch (e) {
+    const s = await getState(uid);
+    const msg = /invalid|token/i.test(e.message) ? 'Your Moodle key stopped working. Reconnect it in Settings.' : String(e.message || e);
+    s.meta = { ...s.meta, lastError: msg, lastErrorAt: Date.now() };
+    await putState(uid, s);
+    throw e;
+  }
+  const { changedClasses, changedTasks, newTasks, eventCount } = diff;
 
   // re-read right before writing so we don't clobber edits made while Moodle was loading
-  const fresh = await getState();
+  const fresh = await getState(uid);
   const merged = mergeState(fresh, { classes: changedClasses, tasks: changedTasks });
   const firstSync = !fresh.meta.lastSync;
   merged.meta = { ...fresh.meta, lastSync: Date.now(), lastError: null, lastCount: eventCount };
-  await putState(merged);
+  await putState(uid, merged);
 
   // don't spam on the very first sync, when *everything* is new
-  if (newTasks.length && !firstSync) {
+  if (notify && newTasks.length && !firstSync) {
     const className = (id) => merged.classes.find((c) => c.id === id)?.name || 'Moodle';
     if (newTasks.length === 1) {
       const t = newTasks[0];
-      await sendPush({ title: `New in ${className(t.classId)}`, body: `${ICONS[t.tag] || ''} ${t.title} — due ${dueLabel(t.due)}`, url: '/', tag: 'new' });
+      await sendPush(uid, { title: `New in ${className(t.classId)}`, body: `${ICONS[t.tag] || ''} ${t.title} — due ${dueLabel(t.due)}`, url: '/', tag: 'new' });
     } else {
       const lines = newTasks.slice(0, 4).map((t) => `${className(t.classId)}: ${t.title} (${dueLabel(t.due)})`);
       if (newTasks.length > 4) lines.push(`+${newTasks.length - 4} more`);
-      await sendPush({ title: `${newTasks.length} new assignments`, body: lines.join('\n'), url: '/', tag: 'new' });
+      await sendPush(uid, { title: `${newTasks.length} new assignments`, body: lines.join('\n'), url: '/', tag: 'new' });
     }
   }
   return { checked: eventCount, changed: changedTasks.length, added: newTasks.length };
 }
 
-async function remind() {
-  const s = await getState();
+async function remindUser(uid) {
+  const s = await getState(uid);
   const today = ymd(new Date());
   if (s.meta.lastRemind === today) return { skipped: 'already sent today' };
   const tomorrow = addDays(today, 1);
-  const live = s.tasks.filter((t) => !t.deleted && !t.done);
+  const liveClass = new Set(s.classes.filter((c) => !c.deleted).map((c) => c.id));
+  const live = s.tasks.filter((t) => !t.deleted && !t.done && liveClass.has(t.classId));
   const dueTomorrow = live.filter((t) => t.due === tomorrow);
   const overdue = live.filter((t) => t.due && t.due < today);
   const className = (id) => s.classes.find((c) => c.id === id)?.name || '';
@@ -63,12 +87,12 @@ async function remind() {
     const lines = dueTomorrow.slice(0, 5).map((t) => `${ICONS[t.tag] || '📄'} ${className(t.classId)}: ${t.title}`);
     if (dueTomorrow.length > 5) lines.push(`+${dueTomorrow.length - 5} more`);
     if (overdue.length) lines.push(`⚠️ ${overdue.length} overdue`);
-    sent = await sendPush({
+    sent = await sendPush(uid, {
       title: dueTomorrow.length ? `${dueTomorrow.length} due tomorrow` : 'Overdue homework',
       body: lines.join('\n'), url: '/', tag: 'remind',
     });
   }
   s.meta = { ...s.meta, lastRemind: today };
-  await putState(s);
+  await putState(uid, s);
   return { dueTomorrow: dueTomorrow.length, overdue: overdue.length, sent };
 }
