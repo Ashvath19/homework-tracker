@@ -5,7 +5,7 @@ import {
   decrypt, sendPush, ymd, addDays, dueLabel,
 } from './_lib.js';
 import { diffWithMoodle } from './_moodle.js';
-import { diffLessonPlans } from './_lessons.js';
+import { diffLessonPlans, LP_VERSION } from './_lessons.js';
 
 const ICONS = { homework: '📄', reading: '📖', essay: '✍️', lab: '🧪', project: '🛠️', quiz: '❓', test: '🚨' };
 
@@ -51,6 +51,7 @@ export async function syncUser(uid, { notify }) {
       diff.changedTasks.push(...lp.changedTasks);
       diff.newTasks.push(...lp.newTasks);
       diff.lpSeen = lp.lpSeen;
+      diff.lpAssign = lp.lpAssign;
     } catch (e) {
       console.error('lesson plans failed', e); // never let this block the regular Moodle sync
     }
@@ -69,7 +70,7 @@ export async function syncUser(uid, { notify }) {
   const firstSync = !fresh.meta.lastSync;
   merged.meta = {
     ...fresh.meta, lastSync: Date.now(), lastError: null, lastCount: eventCount,
-    ...(diff.lpSeen ? { lpSeen: diff.lpSeen, lpInitialized: true } : {}),
+    ...(diff.lpSeen ? { lpSeen: diff.lpSeen, lpAssign: diff.lpAssign, lpInitialized: true, lpVersion: LP_VERSION } : {}),
   };
   await putState(uid, merged);
 
