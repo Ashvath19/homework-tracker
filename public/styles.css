@@ -27,7 +27,7 @@
     --pen-ink: #0f1424;
     --red: #ff7a6e;
     --amber: #f0b44c;
-    --hl-soft: rgba(233, 200, 74, .3);
+    --hl-soft: rgba(240, 205, 70, .42);
     --hover: rgba(255, 255, 255, .04);
     color-scheme: dark;
   }
@@ -49,7 +49,7 @@ a { color: var(--pen); text-underline-offset: 2px; }
 
 /* The highlighter: a slightly uneven swipe behind text */
 .hl {
-  background: linear-gradient(100deg, transparent 0 1%, var(--hl-soft) 2% 98%, transparent 99%) 0 72% / 100% 46% no-repeat;
+  background: linear-gradient(100deg, transparent 0 1%, var(--hl-soft) 2% 98%, transparent 99%) 0 88% / 100% 38% no-repeat;
   padding: 0 .12em;
   margin: 0 -.12em;
 }
