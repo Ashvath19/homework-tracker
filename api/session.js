@@ -1,6 +1,7 @@
 // GET    /api/session → who am I? (+ public push key)
 // DELETE /api/session → log out of this device
-import { currentUser, getProfile, endSession } from './_lib.js';
+import { currentUser, getProfile, endSession, ymd } from './_lib.js';
+import { dayLetter, nextClassDay } from './_lessons.js';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -11,6 +12,7 @@ export default async function handler(req, res) {
       authed: !!p,
       user: p ? { id: uid, name: p.name } : null,
       vapidPublicKey: process.env.VAPID_PUBLIC_KEY || null,
+      school: schoolDays(),
     });
   }
   if (req.method === 'DELETE') {
@@ -18,4 +20,10 @@ export default async function handler(req, res) {
     return res.json({ ok: true });
   }
   res.status(405).end();
+}
+
+// Today's A/B/C letter plus the next A day and B day, for the dashboard header.
+function schoolDays() {
+  const today = ymd(new Date());
+  return { today, letter: dayLetter(today), nextA: nextClassDay(today, 'A'), nextB: nextClassDay(today, 'B') };
 }

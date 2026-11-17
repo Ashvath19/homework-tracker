@@ -48,8 +48,10 @@ export function guessTag(modname, title) {
   return 'homework';
 }
 
-function cleanCourseName(name) {
+export function cleanCourseName(name) {
   return name
+    .replace(/&amp;/g, '&')
+    .replace(/\s+[-–]\s+(mr|mrs|ms|miss|dr|mx|coach|sr|sra|srta|prof)\.?\s.*$/i, '') // "Biology Honors - Dr. Noren"
     .replace(/\s*[([]?\b(20)?\d\d\s*[-–/]\s*(20)?\d\d\b[)\]]?\s*/g, ' ') // "2026-2027", "26-27"
     .replace(/\s{2,}/g, ' ')
     .trim() || name;

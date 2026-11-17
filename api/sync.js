@@ -5,6 +5,7 @@ import {
   decrypt, sendPush, ymd, addDays, dueLabel,
 } from './_lib.js';
 import { diffWithMoodle } from './_moodle.js';
+import { diffLessonPlans } from './_lessons.js';
 
 const ICONS = { homework: '📄', reading: '📖', essay: '✍️', lab: '🧪', project: '🛠️', quiz: '❓', test: '🚨' };
 
@@ -39,7 +40,20 @@ export async function syncUser(uid, { notify }) {
 
   let diff;
   try {
-    diff = await diffWithMoodle(await getState(uid), token);
+    const before = await getState(uid);
+    diff = await diffWithMoodle(before, token);
+    // Lesson plans see the classes the timeline just created, so colors don't collide.
+    const withTimeline = mergeState(before, { classes: diff.changedClasses, tasks: diff.changedTasks });
+    withTimeline.meta = before.meta;
+    try {
+      const lp = await diffLessonPlans(withTimeline, token, profile.moodle.userid);
+      diff.changedClasses.push(...lp.changedClasses);
+      diff.changedTasks.push(...lp.changedTasks);
+      diff.newTasks.push(...lp.newTasks);
+      diff.lpSeen = lp.lpSeen;
+    } catch (e) {
+      console.error('lesson plans failed', e); // never let this block the regular Moodle sync
+    }
   } catch (e) {
     const s = await getState(uid);
     const msg = /invalid|token/i.test(e.message) ? 'Your Moodle key stopped working. Reconnect it in Settings.' : String(e.message || e);
@@ -53,7 +67,10 @@ export async function syncUser(uid, { notify }) {
   const fresh = await getState(uid);
   const merged = mergeState(fresh, { classes: changedClasses, tasks: changedTasks });
   const firstSync = !fresh.meta.lastSync;
-  merged.meta = { ...fresh.meta, lastSync: Date.now(), lastError: null, lastCount: eventCount };
+  merged.meta = {
+    ...fresh.meta, lastSync: Date.now(), lastError: null, lastCount: eventCount,
+    ...(diff.lpSeen ? { lpSeen: diff.lpSeen, lpInitialized: true } : {}),
+  };
   await putState(uid, merged);
 
   // don't spam on the very first sync, when *everything* is new
