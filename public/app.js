@@ -26,6 +26,7 @@ let me = null;              // { id, name }
 let moodle = { connected: false };
 let meta = {};
 let vapidKey = null;
+let school = null;          // { today, letter: 'A'|'B'|'C'|null, nextA, nextB }
 
 function safeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function safeSet(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} }
@@ -268,23 +269,31 @@ function filterBar(list) {
 }
 const applyFilter = (list) => tagFilter ? list.filter((t) => (t.tag || 'homework') === tagFilter) : list;
 
+const PENCIL = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+
 function taskRow(t, showClass) {
   const c = classById(t.classId);
   const due = dueInfo(t.due);
   const tag = TAGS[t.tag] || TAGS.homework;
+  const href = t.link || t.url; // the handout/packet if there is one, otherwise the Moodle page
+  const title = `<span class="tag tag-${t.tag || 'homework'}">${tag.label}</span>${esc(t.title)}`;
+  const meta = (showClass && c) || t.notes || t.doneBy === 'moodle' || t.source === 'lesson' ? `<span class="task-meta">
+          ${showClass && c ? `<span class="chip"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}</span>` : ''}
+          ${t.source === 'lesson' && !t.done ? `<span title="From the lesson plan for ${esc(t.chapter || '')}">Lesson plan</span>` : ''}
+          ${t.notes ? `<span title="${esc(t.notes)}">Has notes</span>` : ''}
+          ${t.done && t.doneBy === 'moodle' ? `<span>Submitted on Moodle</span>` : ''}
+        </span>` : '';
   return `
     <li class="task ${t.done ? 'done' : ''} ${tag.big ? 'big' : ''}" data-id="${t.id}">
       <input type="checkbox" data-action="toggle" ${t.done ? 'checked' : ''} aria-label="Mark done">
-      <button class="task-body" data-action="edit-task">
-        <span class="task-title"><span class="tag tag-${t.tag || 'homework'}">${tag.label}</span>${esc(t.title)}</span>
-        ${(showClass && c) || t.notes || t.doneBy === 'moodle' ? `<span class="task-meta">
-          ${showClass && c ? `<span class="chip"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}</span>` : ''}
-          ${t.notes ? `<span title="${esc(t.notes)}">Has notes</span>` : ''}
-          ${t.done && t.doneBy === 'moodle' ? `<span>Submitted on Moodle</span>` : ''}
-        </span>` : ''}
-      </button>
-      ${t.done ? '' : `<span class="due ${due.cls}">${due.cls === 'today' ? `<span class="hl">${due.label}</span>` : due.label}</span>`}
-      ${t.url ? `<a class="ext" href="${esc(t.url)}" target="_blank" rel="noopener" title="Open in Moodle" aria-label="Open in Moodle">Open</a>` : ''}
+      <div class="task-body">
+        ${href
+          ? `<a class="task-title linked" href="${esc(href)}" target="_blank" rel="noopener" title="Open ${t.link ? 'the linked file' : 'in Moodle'}">${title}</a>`
+          : `<button class="task-title" data-action="edit-task">${title}</button>`}
+        ${meta}
+      </div>
+      ${t.done ? '' : `<span class="due ${due.cls}">${due.cls === 'today' ? `<span class="hl">${due.label}</span>` : due.label}${t.dueEstimated ? '<span class="est" title="Estimated: the next lesson plan isn’t posted yet">?</span>' : ''}</span>`}
+      <button class="edit-btn" data-action="edit-task" aria-label="Edit ${esc(t.title)}" title="Edit">${PENCIL}</button>
     </li>`;
 }
 
@@ -336,15 +345,9 @@ function renderDashboard() {
     else buckets.later.push(t);
   }
 
-  const weekCount = buckets.today.length + buckets.tomorrow.length + buckets.week.length;
-  const summary = todo.length
-    ? `${weekCount} due in the next 7 days` +
-      (buckets.late.length ? `, <span class="bad">${buckets.late.length} overdue</span>` : '') + '.'
-    : "You're all caught up.";
-
   main.innerHTML = `
-    <div class="page-header"><h2>Dashboard</h2></div>
-    <p class="subtitle">${summary}</p>
+    ${hero(allTodo, buckets)}
+    ${dayPicker()}
     ${quickAddForm(null)}
     ${filterBar(allTodo)}
     ${group('Overdue', buckets.late, true, 'overdue')}
@@ -355,6 +358,79 @@ function renderDashboard() {
     ${group('No due date', buckets.none, true)}
     ${todo.length ? '' : `<div class="empty"><p>Nothing due. Add homework above when you get some.</p></div>`}
     ${completedSection(tasks().filter((t) => t.done && classById(t.classId)), true)}`;
+}
+
+function firstName() {
+  const n = me?.name || '';
+  return (n.match(/\(([^)]+)\)/)?.[1] || n.split(' ')[0] || '').trim();
+}
+
+function hero(allTodo, b) {
+  const now = new Date();
+  const dateLine = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  const letter = school?.today === dateStr(now) ? school.letter : null;
+  const dayBadge = letter
+    ? `<span class="day-badge day-${letter}" title="${letter} day on the VCHS calendar">${letter}<small>day</small></span>`
+    : `<span class="day-badge day-off" title="No classes today">–<small>no school</small></span>`;
+
+  // one plain sentence about what matters next
+  let line;
+  const tomorrowCount = b.tomorrow.length, todayCount = b.today.length;
+  if (!allTodo.length) line = 'Nothing on your list. Enjoy it.';
+  else if (todayCount) line = `${todayCount} thing${todayCount === 1 ? '' : 's'} due today${tomorrowCount ? `, ${tomorrowCount} tomorrow` : ''}.`;
+  else if (tomorrowCount) line = `${tomorrowCount} thing${tomorrowCount === 1 ? '' : 's'} due tomorrow.`;
+  else {
+    const next = [...allTodo].filter((t) => t.due).sort(byDue).find((t) => daysUntil(t.due) >= 0);
+    line = next ? `Next up: ${esc(next.title)}, ${dueInfo(next.due).label.toLowerCase()}.` : 'Nothing due soon.';
+  }
+  const bigOne = [...allTodo].filter((t) => (t.tag === 'test' || t.tag === 'quiz') && t.due && daysUntil(t.due) >= 0 && daysUntil(t.due) < 7).sort(byDue)[0];
+  const testLine = bigOne
+    ? `<p class="hero-note"><span class="tag tag-${bigOne.tag}">${TAGS[bigOne.tag].label}</span>${esc(classById(bigOne.classId)?.name || '')}, ${dueInfo(bigOne.due).label.toLowerCase()}</p>` : '';
+  const late = b.late.length ? `<p class="hero-note bad">${b.late.length} overdue</p>` : '';
+
+  return `
+    <header class="hero">
+      <div class="hero-text">
+        <p class="hero-date">${dateLine}</p>
+        <h2>Welcome back${firstName() ? `, <span class="hl">${esc(firstName())}</span>` : ''}</h2>
+        <p class="hero-line">${line}</p>
+        ${testLine}${late}
+      </div>
+      ${ONLINE && school ? dayBadge : ''}
+    </header>`;
+}
+
+// Classes from Moodle lesson plans need to know if you're in the A-day or B-day section.
+function dayPicker() {
+  const need = classes().filter((c) => c.moodleId && !c.day && tasks().some((t) => t.classId === c.id && t.source === 'lesson'));
+  if (!need.length) return '';
+  return `
+    <section class="day-setup">
+      <h3>Which day do you have each class?</h3>
+      <p class="hint">Lesson plans list two dates, one for A days and one for B days. Pick yours so homework shows the right due date. You can change it later under Edit class.</p>
+      <ul>
+        ${need.map((c) => `
+          <li>
+            <span class="chip"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}</span>
+            <span class="seg" role="group" aria-label="${esc(c.name)} day">
+              <button data-action="set-day" data-class="${c.id}" data-day="A">A day</button>
+              <button data-action="set-day" data-class="${c.id}" data-day="B">B day</button>
+            </span>
+          </li>`).join('')}
+      </ul>
+    </section>`;
+}
+
+// Switch a class between A and B days and move its lesson-plan due dates to match.
+function setClassDay(c, day) {
+  c.day = day;
+  touch(c);
+  for (const t of tasks()) {
+    if (t.classId === c.id && t.lpDates && t.dueAuto !== false) {
+      t.due = t.lpDates[day === 'B' ? 1 : 0];
+      touch(t);
+    }
+  }
 }
 
 function renderClass(c) {
@@ -469,8 +545,9 @@ function openTaskDialog(id) {
   f.due.value = t.due || '';
   f.notes.value = t.notes || '';
   const link = $('#task-link');
-  link.hidden = !t.url;
-  if (t.url) link.href = t.url;
+  const href = t.link || t.url;
+  link.hidden = !href;
+  if (href) { link.href = href; link.textContent = t.link ? 'Open linked file' : 'Open in Moodle'; }
   $('#task-dialog').showModal();
 }
 $('#task-dialog').addEventListener('close', () => {
@@ -481,6 +558,7 @@ $('#task-dialog').addEventListener('close', () => {
     t.title = f.title.value.trim() || t.title;
     t.classId = f.classId.value;
     t.tag = f.tag.value;
+    if (f.due.value !== (t.due || '')) t.dueAuto = false; // you picked a date; sync won't move it
     t.due = f.due.value;
     t.notes = f.notes.value.trim();
     touch(t);
@@ -500,6 +578,8 @@ function openClassDialog(id) {
   $('#class-dialog-title').textContent = c ? 'Edit class' : 'New class';
   f.querySelector('[data-action="delete-class"]').hidden = !c;
   f.name.value = c ? c.name : '';
+  $('#class-day-row').hidden = !c?.moodleId;
+  f.day.value = c?.day || '';
   const used = new Set(classes().map((x) => x.color));
   const color = c ? c.color : COLORS.find((x) => !used.has(x)) || COLORS[classes().length % COLORS.length];
   $('#color-swatches').innerHTML = COLORS.map((col) => `
@@ -515,7 +595,9 @@ $('#class-dialog').addEventListener('close', () => {
     const color = f.querySelector('input[name=color]:checked')?.value || COLORS[0];
     if (name) {
       if (editingClassId) {
-        touch(Object.assign(classById(editingClassId), { name, color }));
+        const c = classById(editingClassId);
+        touch(Object.assign(c, { name, color }));
+        if (f.day.value && f.day.value !== c.day) setClassDay(c, f.day.value);
         commit();
       } else {
         const id = uid();
@@ -631,6 +713,11 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'login-mode': loginMode = el.dataset.mode; render(); break;
+    case 'set-day': {
+      const c = classById(el.dataset.class);
+      if (c) { setClassDay(c, el.dataset.day); commit(); toast(`${c.name}: ${el.dataset.day} days`); }
+      break;
+    }
     case 'link-device': {
       try {
         const { code, expiresAt } = await api('POST', '/api/link');
@@ -779,6 +866,7 @@ async function boot(again = false) {
     vapidKey = s.vapidPublicKey;
     authed = s.authed;
     me = s.user;
+    school = s.school || null;
     moodle = me ? { connected: true, name: me.name } : { connected: false };
   } catch {
     return; // offline — keep showing the cached copy

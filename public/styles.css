@@ -151,11 +151,20 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--pen); outli
 }
 .task input[type=checkbox]:checked { background: var(--pen); border-color: var(--pen); }
 .task input[type=checkbox]:checked::after { transform: translateY(-1px) rotate(45deg) scale(1); }
-.task-body {
-  flex: 1; min-width: 0; text-align: left; border: none; background: none; cursor: pointer; padding: 0;
-  display: flex; flex-direction: column; gap: 2px;
+.task-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.task-title {
+  overflow-wrap: anywhere; font-weight: 500; text-align: left; color: var(--ink);
+  border: none; background: none; padding: 0; cursor: pointer; text-decoration: none; align-self: flex-start;
 }
-.task-title { overflow-wrap: anywhere; font-weight: 500; }
+a.task-title.linked:hover { color: var(--pen); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.edit-btn {
+  flex: none; border: none; background: none; color: var(--ink-3); cursor: pointer;
+  padding: 6px; border-radius: 6px; display: grid; place-items: center; opacity: .55;
+}
+.task:hover .edit-btn, .edit-btn:focus-visible { opacity: 1; }
+.edit-btn:hover { color: var(--ink); background: var(--hover); }
+.est { margin-left: 3px; font-size: 11px; color: var(--ink-3); vertical-align: super; }
+@media (hover: none) { .edit-btn { opacity: 1; } }
 .task-meta { display: flex; gap: 12px; align-items: center; font-size: 13px; color: var(--ink-2); }
 .chip { display: inline-flex; align-items: center; gap: 6px; }
 .due { font-size: 14px; color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -256,4 +265,40 @@ dialog legend { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-b
   .quick-add > * { flex: 1 1 100%; }
   .quick-add input[name=title] { border-color: var(--rule); }
   .login h1 { font-size: 40px; }
+}
+
+/* ---------- Dashboard header ---------- */
+.hero { display: flex; align-items: flex-start; gap: 24px; margin: 4px 0 28px; }
+.hero-text { flex: 1; min-width: 0; }
+.hero-date { margin: 0 0 6px; color: var(--ink-2); font-weight: 500; }
+.hero h2 { margin: 0; font-size: clamp(34px, 5.2vw, 48px); font-weight: 800; letter-spacing: -.035em; line-height: 1.05; }
+.hero-line { margin: 12px 0 0; font-size: 18px; color: var(--ink); max-width: 44ch; }
+.hero-note { margin: 8px 0 0; font-size: 15px; color: var(--ink-2); }
+.hero-note .tag { vertical-align: 1px; }
+
+/* Today's A/B day, drawn like a cell on the school calendar */
+.day-badge {
+  flex: none; display: grid; place-items: center; align-content: center;
+  width: 84px; height: 84px; border: 1.5px solid var(--ink); border-radius: 10px;
+  font-size: 44px; font-weight: 800; line-height: 1; letter-spacing: -.02em;
+}
+.day-badge small { font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--ink-2); margin-top: 4px; }
+.day-badge.day-C { border-style: dashed; }
+.day-badge.day-off { font-size: 30px; color: var(--ink-3); border-color: var(--rule); }
+
+/* A/B setup */
+.day-setup { border: 1.5px dashed var(--ink-3); border-radius: 10px; padding: 16px 18px; margin-bottom: 24px; }
+.day-setup h3 { margin: 0 0 4px; font-size: 16px; }
+.day-setup .hint { margin: 0 0 10px; }
+.day-setup ul { list-style: none; margin: 0; padding: 0; }
+.day-setup li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--rule); }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; flex: none; }
+.seg button { border: none; background: var(--sheet); padding: 6px 12px; font-weight: 600; font-size: 13px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button:hover { background: var(--pen); color: var(--pen-ink); }
+
+@media (max-width: 720px) {
+  .hero { gap: 14px; }
+  .day-badge { width: 64px; height: 64px; font-size: 32px; }
+  .hero-line { font-size: 16px; }
 }

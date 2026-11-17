@@ -63,6 +63,13 @@
     <form method="dialog" id="class-form">
       <h2 id="class-dialog-title">New class</h2>
       <label>Name <input name="name" required placeholder="e.g. AP Chemistry"></label>
+      <label id="class-day-row" hidden>Meets on
+        <select name="day">
+          <option value="">Not set</option>
+          <option value="A">A days</option>
+          <option value="B">B days</option>
+        </select>
+      </label>
       <fieldset>
         <legend>Color</legend>
         <div id="color-swatches" class="swatches"></div>
