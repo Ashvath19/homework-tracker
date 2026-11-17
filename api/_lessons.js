@@ -4,6 +4,7 @@
 import crypto from 'node:crypto';
 import { COLORS, ymd, addDays } from './_lib.js';
 import { ws, MOODLE_BASE, guessTag, cleanCourseName, tidyName } from './_moodle.js';
+import { activityDetails, linksIn, cleanFileUrl, isMoodleFile, dedupeFiles, cmidFromUrl } from './_details.js';
 import SCHOOL from './_schoolDays.json' with { type: 'json' };
 
 // A/B/C letter for each school day, from the VCHS campus calendar. Days off aren't listed.
@@ -20,6 +21,7 @@ export function nextClassDay(d, letter) {
 const MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
 const MONTH_RE = '(jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\\.?';
 const LOOKBACK_DAYS = 10;
+export const LP_VERSION = 2; // 2: files, descriptions, lesson-plan links
 
 const pad = (n) => String(n).padStart(2, '0');
 const ymdOf = (y, m, d) => {
@@ -94,7 +96,7 @@ function htmlToLines(h) {
 const FILLER = /^(n\/?a|none|no homework|nothing|tbd|tba|-+|—|complete\s*\.{2,}|\.{2,}|…)\.?$/i;
 const DUE_RE = new RegExp(`\\bdue\\s*:?\\s*(?:by\\s+|on\\s+)?(?:[a-z]+day,?\\s*)?${MONTH_RE}\\s*\\d{1,2}`, 'i');
 
-// Pulls homework out of a chapter. Returns [{ text, link }]:
+// Pulls homework out of a chapter. Returns [{ text, links }]:
 //  - every line under a "Homework" heading
 //  - any other line that says "Due: <date>" (Spanish lists projects this way)
 export function extractHomework(html, baseUrl = '') {
@@ -109,7 +111,7 @@ export function extractHomework(html, baseUrl = '') {
   const add = (text, links) => {
     text = text.length > 200 ? `${text.slice(0, 197)}…` : text;
     if (out.some((o) => o.text === text)) { last = null; return; }
-    last = { text, link: resolve(links[0]) };
+    last = { text, links: links.map(resolve).filter(Boolean) };
     out.push(last);
   };
 
@@ -123,8 +125,8 @@ export function extractHomework(html, baseUrl = '') {
     }
     // a line that's only a link (like a project handout) belongs to the item above it
     if (l.linkOnly) {
-      if (last && !last.link) last.link = resolve(l.links[0]);
-      else if (inHw && !last) add(l.text, l.links);
+      if (last) last.links.push(...l.links.map(resolve).filter(Boolean));
+      else if (inHw) add(l.text, l.links);
       continue;
     }
     if (inHw && (l.heading || (/:$/.test(l.text) && l.text.length < 45))) { inHw = false; last = null; continue; }
@@ -184,7 +186,9 @@ export async function diffLessonPlans(state, token, moodleUserId) {
   const now = Date.now();
   const today = ymd(new Date());
   const since = addDays(today, -LOOKBACK_DAYS);
-  const cache = { ...(state.meta.lpSeen || {}) }; // chapter → timemodified we last read
+  // chapter → timemodified we last read. Bump LP_VERSION when what we pull out of chapters changes.
+  const cache = state.meta.lpVersion === LP_VERSION ? { ...(state.meta.lpSeen || {}) } : {};
+  const lessonLinks = { ...(state.meta.lpAssign || {}) }; // assignment cmid → lesson plan that links it
   const firstRun = !state.meta.lpInitialized;
 
   const courses = await ws(token, 'core_enrol_get_users_courses', { userid: moodleUserId });
@@ -204,12 +208,40 @@ export async function diffLessonPlans(state, token, moodleUserId) {
       .flatMap((s) => (s.modules || []).filter((m) => m.modname === 'book' && m.visible !== 0 && m.uservisible !== false));
     if (!books.length) continue;
 
+    // course modules by id, so "mod/resource/view.php?id=…" links can become the actual file
+    const modules = new Map(contents.flatMap((sec) => sec.modules || []).map((m) => [m.id, m]));
+    let detailsP = null;
+    const details = () => (detailsP ||= activityDetails(ws, token, [course.id]).catch(() => new Map()));
+
+    // A homework link → files to show + (if it points at a Moodle assignment) its description
+    const resolveLinks = async (links, names = []) => {
+      const files = []; let desc = '';
+      for (const [i, href] of links.entries()) {
+        const cmid = /\/mod\/(resource|url|assign|quiz|page|folder)\/view\.php/.test(href) && href.startsWith(MOODLE_BASE) ? cmidFromUrl(href) : null;
+        const mod = cmid && modules.get(cmid);
+        if (mod?.modname === 'resource' && mod.contents?.[0]) {
+          files.push({ name: mod.contents[0].filename || mod.name, url: cleanFileUrl(mod.contents[0].fileurl) });
+        } else if (mod?.modname === 'url' && mod.contents?.[0]?.fileurl) {
+          files.push({ name: mod.name, url: mod.contents[0].fileurl });
+        } else if (mod && (mod.modname === 'assign' || mod.modname === 'quiz')) {
+          const d = (await details()).get(`cm-${cmid}`);
+          if (d) { desc ||= d.desc; files.push(...d.files); }
+        } else if (isMoodleFile(href)) {
+          files.push({ name: names[i] || decodeURIComponent(href.split('/').pop().split('?')[0]), url: cleanFileUrl(href) });
+        } else {
+          files.push({ name: names[i] || href.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60), url: href });
+        }
+      }
+      return { files: dedupeFiles(files), desc };
+    };
+
     let cls = classes.get(course.id);
     if (cls?.deleted) continue; // you deleted this class
     const tidy = cls && tidyName(cls, course.fullname);
     if (tidy) { cls = { ...cls, name: tidy, updatedAt: now }; classes.set(course.id, cls); changedClasses.push(cls); }
     const ab = cls?.day === 'B' ? 1 : 0; // chapter titles list the A-day date first, then the B-day date
 
+    const courseChapters = []; // every dated chapter from every quarter's book
     for (const book of books) {
       const files = book.contents || [];
       const structureFile = files.find((f) => f.filename === 'structure');
@@ -223,6 +255,9 @@ export async function diffLessonPlans(state, token, moodleUserId) {
         .filter((c) => c.hidden !== '1' && c.level === 0)
         .map((c) => ({ ...c, chapId: c.href.split('/')[0], dates: parseChapterDates(c.title, startYear) }))
         .filter((c) => c.dates);
+
+      const chapterUrl = (c) => `${MOODLE_BASE}/mod/book/view.php?id=${book.id}&chapterid=${c.chapId}`;
+      courseChapters.push(...dated.map((c) => ({ ...c, url: chapterUrl(c) })));
 
       for (let i = 0; i < dated.length; i++) {
         const ch = dated[i];
@@ -257,7 +292,13 @@ export async function diffLessonPlans(state, token, moodleUserId) {
 
         let items;
         const pageBase = file.fileurl.replace('/webservice/pluginfile.php', '/pluginfile.php'); // opens with your normal Moodle login
-        try { items = extractHomework(await fetchFile(file.fileurl, token), pageBase); } catch { continue; }
+        let html;
+        try { html = await fetchFile(file.fileurl, token); } catch { continue; }
+        items = extractHomework(html, pageBase);
+        for (const l of linksIn(html, pageBase)) {
+          const cm = /\/mod\/(assign|quiz)\/view\.php/.test(l.url) ? cmidFromUrl(l.url) : null;
+          if (cm) lessonLinks[cm] = { u: chapterUrl(ch), t: ch.title.trim() };
+        }
         cache[cacheKey] = file.timemodified;
 
         if (!cls) {
@@ -274,8 +315,11 @@ export async function diffLessonPlans(state, token, moodleUserId) {
           .map((t) => t.moodleTitle || t.title);
 
         const seen = new Set();
-        for (const { text: rawText, link } of items) {
+        for (const { text: rawText, links } of items) {
           const text = titleWithoutDue(rawText);
+          const { files, desc: linkedDesc } = await resolveLinks(links);
+          const desc = linkedDesc || (rawText !== text || rawText.length > 60 ? rawText : '');
+          const link = files[0]?.url || null;
           const id = prefix + hash(text);
           if (seen.has(id)) continue;
           seen.add(id);
@@ -283,7 +327,9 @@ export async function diffLessonPlans(state, token, moodleUserId) {
           const existing = tasks.get(id);
           if (existing) {
             if (existing.deleted) continue;
-            if (link && existing.link !== link) changedTasks.push({ ...existing, link, updatedAt: now });
+            if (JSON.stringify(existing.files || []) !== JSON.stringify(files) || (existing.desc || '') !== desc) {
+              changedTasks.push({ ...existing, files, desc, link, lessonUrl: existing.url, lessonTitle: existing.chapter, updatedAt: now });
+            }
             if (existing.dueAuto === false || fixedDue) continue;
             if (existing.due !== nextDates[ab] || existing.lpDates?.join() !== nextDates.join()) {
               changedTasks.push({ ...existing, lpDates: nextDates, due: nextDates[ab], dueEstimated: estimated, updatedAt: now });
@@ -296,7 +342,7 @@ export async function diffLessonPlans(state, token, moodleUserId) {
           const t = {
             id, source: 'lesson', classId: cls.id, title: text, moodleTitle: text, tag: guessTag('lesson', text),
             due, lpDates: fixedDue ? null : nextDates, dueAuto: true, dueEstimated: !fixedDue && estimated,
-            link, chapter: ch.title.trim(), url: `${MOODLE_BASE}/mod/book/view.php?id=${book.id}&chapterid=${ch.chapId}`,
+            link, files, desc, chapter: ch.title.trim(), lessonTitle: ch.title.trim(), lessonUrl: chapterUrl(ch), url: `${MOODLE_BASE}/mod/book/view.php?id=${book.id}&chapterid=${ch.chapId}`,
             notes: '', done: false, doneAt: null, updatedAt: now,
           };
           changedTasks.push(t);
@@ -310,6 +356,21 @@ export async function diffLessonPlans(state, token, moodleUserId) {
         }
       }
     }
+
+    // Every Moodle assignment in this class gets a link to its lesson plan: the chapter that
+    // links to it, or else the last class day on/before it's due.
+    if (cls && courseChapters.length) {
+      const ordered = courseChapters.slice().sort((a, b) => a.dates[ab].localeCompare(b.dates[ab]));
+      for (const t of [...tasks.values(), ...changedTasks.filter((x) => !tasks.has(x.id))]) {
+        if (t.classId !== cls.id || t.source !== 'moodle' || t.deleted || !t.due) continue;
+        const named = t.cmid && lessonLinks[t.cmid];
+        const byDate = [...ordered].reverse().find((c) => c.dates[ab] <= t.due && c.dates[ab] >= addDays(t.due, -14));
+        const pick = named || (byDate && { u: byDate.url, t: byDate.title.trim() });
+        if (pick && (t.lessonUrl !== pick.u || t.lessonTitle !== pick.t)) {
+          changedTasks.push({ ...t, lessonUrl: pick.u, lessonTitle: pick.t, updatedAt: now });
+        }
+      }
+    }
   }
-  return { changedClasses, changedTasks, newTasks, lpSeen: cache };
+  return { changedClasses, changedTasks, newTasks, lpSeen: cache, lpAssign: lessonLinks };
 }

@@ -331,3 +331,37 @@ dialog legend { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-b
   .sidebar nav .nav-link.active .count { color: inherit; opacity: .7; }
   .sidebar-footer .nav-link { padding: 5px 8px; }
 }
+
+/* ---------- Homework details ---------- */
+dialog.detail { width: min(560px, calc(100vw - 24px)); max-height: min(86vh, 900px); }
+#detail-body { padding: 20px 24px 22px; display: flex; flex-direction: column; gap: 14px; }
+.detail-top { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--ink-2); }
+.detail-top .tag { margin: 0; }
+.detail-close { margin-left: auto; font-size: 24px; line-height: 1; padding: 0 6px; }
+#detail-body h2 { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -.02em; line-height: 1.15; }
+.detail-due { margin: -6px 0 0; color: var(--ink-2); font-weight: 500; }
+#detail-body h3 { margin: 0 0 8px; font-size: 13px; font-weight: 700; color: var(--ink-2); }
+.detail-files ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.detail-files a {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+  border: 1px solid var(--rule); border-radius: 9px; text-decoration: none; color: var(--ink);
+  transition: border-color .12s, background-color .12s;
+}
+.detail-files a:hover { border-color: var(--pen); background: var(--hover); }
+.detail-files .kind {
+  flex: none; min-width: 52px; text-align: center; font-size: 11px; font-weight: 700; padding: 3px 6px;
+  border-radius: 5px; background: var(--ink); color: var(--paper);
+}
+.detail-files .fname { overflow-wrap: anywhere; font-weight: 500; }
+.detail-desc { font-size: 15px; line-height: 1.55; }
+.detail-desc p { margin: 0 0 8px; max-width: 62ch; }
+.detail-desc ul { margin: 0 0 8px; padding-left: 20px; }
+.detail-desc li { margin-bottom: 3px; }
+.detail-lesson {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 12px 0 0; border-top: 1px solid var(--rule); text-decoration: none; color: var(--ink-2); font-size: 14px;
+}
+.detail-lesson strong { color: var(--pen); font-weight: 600; }
+.detail-lesson:hover strong { text-decoration: underline; text-underline-offset: 3px; }
+.detail-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 4px; }
+.detail-actions .link-btn { margin-left: auto; }

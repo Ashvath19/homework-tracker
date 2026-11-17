@@ -1,5 +1,6 @@
 // Reads upcoming work from Moodle using the same web service the Moodle mobile app uses.
 import { COLORS, ymd, TZ } from './_lib.js';
+import { activityDetails, cmidFromUrl } from './_details.js';
 
 export const MOODLE_BASE = (process.env.MOODLE_URL || 'https://learn.vcs.net').replace(/\/$/, '');
 
@@ -85,6 +86,10 @@ export async function diffWithMoodle(state, token) {
   const changedClasses = [], changedTasks = [], newTasks = [];
   const seen = new Set();
 
+  // descriptions + attached files for the assignments/quizzes on the timeline
+  const courseIds = [...new Set(events.filter((e) => e.course?.id).map((e) => e.course.id))];
+  const details = await activityDetails(ws, token, courseIds).catch(() => new Map());
+
   for (const ev of events) {
     if (!ev.course?.id || !ev.instance || !ev.modulename) continue;
     const id = `moodle-${ev.modulename}-${ev.instance}`;
@@ -107,20 +112,23 @@ export async function diffWithMoodle(state, token) {
     const due = dueFromTimestamp(ev.timesort);
     const url = ev.url || ev.action?.url || '';
     const existing = tasks.get(id);
+    const d = details.get(`cm-${cmidFromUrl(url)}`) || details.get(`${ev.modulename}-${ev.instance}`) || details.get(`cm-${ev.instance}`);
+    const info = { desc: d?.desc || '', files: d?.files || [], cmid: d?.cmid || cmidFromUrl(url) };
 
     if (!existing) {
       const t = {
         id, source: 'moodle', classId: cls.id, title, moodleTitle: title, tag: guessTag(ev.modulename, title),
-        due, dueAt: ev.timesort, url, notes: '', done: false, doneAt: null, updatedAt: now,
+        due, dueAt: ev.timesort, url, ...info, notes: '', done: false, doneAt: null, updatedAt: now,
       };
       changedTasks.push(t);
       newTasks.push(t);
     } else if (!existing.deleted) {
       const reopened = existing.done && existing.doneBy === 'moodle'; // it came back, so it isn't finished
       const renamedByYou = existing.title !== existing.moodleTitle;
-      if (existing.due !== due || existing.moodleTitle !== title || existing.url !== url || reopened) {
+      const infoChanged = d && (existing.desc !== info.desc || JSON.stringify(existing.files || []) !== JSON.stringify(info.files));
+      if (existing.due !== due || existing.moodleTitle !== title || existing.url !== url || reopened || infoChanged || !existing.cmid) {
         changedTasks.push({
-          ...existing, due, dueAt: ev.timesort, url, moodleTitle: title,
+          ...existing, due, dueAt: ev.timesort, url, moodleTitle: title, ...(d ? info : { cmid: info.cmid }),
           title: renamedByYou ? existing.title : title,
           ...(reopened ? { done: false, doneAt: null, doneBy: null } : {}),
           updatedAt: now,

@@ -275,7 +275,6 @@ function taskRow(t, showClass) {
   const c = classById(t.classId);
   const due = dueInfo(t.due);
   const tag = TAGS[t.tag] || TAGS.homework;
-  const href = t.link || t.url; // the handout/packet if there is one, otherwise the Moodle page
   const title = `<span class="tag tag-${t.tag || 'homework'}">${tag.label}</span>${esc(t.title)}`;
   const meta = (showClass && c) || t.notes || t.doneBy === 'moodle' || t.source === 'lesson' ? `<span class="task-meta">
           ${showClass && c ? `<span class="chip"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}</span>` : ''}
@@ -287,9 +286,7 @@ function taskRow(t, showClass) {
     <li class="task ${t.done ? 'done' : ''} ${tag.big ? 'big' : ''}" data-id="${t.id}">
       <input type="checkbox" data-action="toggle" ${t.done ? 'checked' : ''} aria-label="Mark done">
       <div class="task-body">
-        ${href
-          ? `<a class="task-title linked" href="${esc(href)}" target="_blank" rel="noopener" title="Open ${t.link ? 'the linked file' : 'in Moodle'}">${title}</a>`
-          : `<button class="task-title" data-action="edit-task">${title}</button>`}
+        <button class="task-title" data-action="open-task">${title}</button>
         ${meta}
       </div>
       ${t.done ? '' : `<span class="due ${due.cls}">${due.cls === 'today' ? `<span class="hl">${due.label}</span>` : due.label}${t.dueEstimated ? '<span class="est" title="Estimated: the next lesson plan isn’t posted yet">?</span>' : ''}</span>`}
@@ -531,6 +528,80 @@ function b64ToBytes(b64) {
   return Uint8Array.from(s, (c) => c.charCodeAt(0));
 }
 
+// ---------- details view ----------
+const fileHref = (u) => (/^https:\/\/learn\.vcs\.net\/(webservice\/)?pluginfile\.php\//.test(u) && ONLINE ? `/api/file?u=${encodeURIComponent(u)}` : u);
+function fileKind(f) {
+  const ext = (f.name.match(/\.([a-z0-9]{2,5})$/i)?.[1] || f.url.split('?')[0].match(/\.([a-z0-9]{2,5})$/i)?.[1] || '').toLowerCase();
+  if (/docs\.google\.com\/document/.test(f.url)) return 'Doc';
+  if (/docs\.google\.com\/presentation/.test(f.url)) return 'Slides';
+  if (/docs\.google\.com\/spreadsheets/.test(f.url)) return 'Sheet';
+  if (/youtube\.com|youtu\.be|vimeo/.test(f.url)) return 'Video';
+  return { pdf: 'PDF', doc: 'Word', docx: 'Word', ppt: 'PPT', pptx: 'PPT', xls: 'Excel', xlsx: 'Excel', jpg: 'Image', jpeg: 'Image', png: 'Image', gif: 'Image', heic: 'Image', mp4: 'Video', mov: 'Video' }[ext] || 'Link';
+}
+function descHtml(text) {
+  const out = [];
+  let list = [];
+  const flush = () => { if (list.length) { out.push(`<ul>${list.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>`); list = []; } };
+  for (const line of text.split('\n')) {
+    if (line.startsWith('• ')) list.push(line.slice(2));
+    else { flush(); out.push(`<p>${esc(line)}</p>`); }
+  }
+  flush();
+  return out.join('');
+}
+
+let detailId = null;
+function openDetail(id) {
+  const t = state.tasks.find((x) => x.id === id);
+  if (!t) return;
+  detailId = id;
+  const c = classById(t.classId);
+  const tag = TAGS[t.tag] || TAGS.homework;
+  const files = t.files?.length ? t.files : (t.link ? [{ name: 'Linked file', url: t.link }] : []);
+  const dueText = t.due ? parseDate(t.due).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }) : 'No due date';
+  const lesson = t.lessonUrl || (t.source === 'lesson' ? t.url : null);
+  const lessonTitle = t.lessonTitle || t.chapter;
+
+  $('#detail-body').innerHTML = `
+    <div class="detail-top">
+      <span class="tag tag-${t.tag || 'homework'}">${tag.label}</span>
+      ${c ? `<span class="chip"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}</span>` : ''}
+      <button class="icon-btn detail-close" data-action="detail-close" aria-label="Close">×</button>
+    </div>
+    <h2>${esc(t.title)}</h2>
+    <p class="detail-due ${!t.done && t.due && daysUntil(t.due) < 0 ? 'bad' : ''}">${t.done ? 'Done' : `Due ${esc(dueText)}`}${t.dueEstimated && !t.done ? ' (estimated)' : ''}</p>
+
+    ${files.length ? `
+      <section class="detail-files">
+        <h3>Files</h3>
+        <ul>${files.map((f) => `
+          <li><a href="${esc(fileHref(f.url))}" target="_blank" rel="noopener">
+            <span class="kind">${fileKind(f)}</span><span class="fname">${esc(f.name)}</span>
+          </a></li>`).join('')}
+        </ul>
+      </section>` : ''}
+
+    ${t.desc ? `<section class="detail-desc"><h3>Instructions</h3>${descHtml(t.desc)}</section>` : ''}
+    ${!files.length && !t.desc ? `<p class="hint">Your teacher didn't post a description or files with this one. Check the lesson plan below.</p>` : ''}
+    ${t.notes ? `<section class="detail-desc"><h3>Your notes</h3>${descHtml(t.notes)}</section>` : ''}
+
+    ${lesson ? `<a class="detail-lesson" href="${esc(lesson)}" target="_blank" rel="noopener">
+      <span>Lesson plan</span><strong>${esc(lessonTitle || 'Open in Moodle')}</strong></a>` : ''}
+
+    <div class="detail-actions">
+      <button class="primary" data-action="detail-done">${t.done ? 'Mark not done' : 'Mark done'}</button>
+      <button class="btn" data-action="detail-edit">Edit</button>
+      ${t.source === 'moodle' && t.url ? `<a class="link-btn" href="${esc(t.url)}" target="_blank" rel="noopener">Open on Moodle</a>` : ''}
+    </div>`;
+  $('#detail-dialog').showModal();
+}
+$('#detail-dialog').addEventListener('close', () => {
+  detailId = null;
+  if (renderPending) { renderPending = false; render(); }
+});
+// click outside the panel to close
+$('#detail-dialog').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
+
 // ---------- task dialog ----------
 let editingTaskId = null;
 function openTaskDialog(id) {
@@ -624,6 +695,22 @@ document.addEventListener('click', async (e) => {
     case 'new-class': openClassDialog(null); break;
     case 'edit-class': openClassDialog(el.dataset.class); break;
     case 'edit-task': openTaskDialog(taskId); break;
+    case 'open-task': openDetail(taskId); break;
+    case 'detail-close': $('#detail-dialog').close(); break;
+    case 'detail-edit': { const id = detailId; $('#detail-dialog').close(); openTaskDialog(id); break; }
+    case 'detail-done': {
+      const t = state.tasks.find((x) => x.id === detailId);
+      if (t) {
+        t.done = !t.done;
+        t.doneAt = t.done ? Date.now() : null;
+        t.doneBy = t.done ? 'you' : null;
+        touch(t);
+        $('#detail-dialog').close();
+        commit();
+        if (t.done) toast('Marked done');
+      }
+      break;
+    }
     case 'delete-task': {
       const t = state.tasks.find((x) => x.id === editingTaskId);
       if (t) touch(Object.assign(t, { deleted: true }));
