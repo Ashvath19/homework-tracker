@@ -21,7 +21,7 @@ export function nextClassDay(d, letter) {
 const MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
 const MONTH_RE = '(jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\\.?';
 const LOOKBACK_DAYS = 10;
-export const LP_VERSION = 2; // 2: files, descriptions, lesson-plan links
+export const LP_VERSION = 3; // 2: files, descriptions, lesson-plan links. 3: borrow matching links
 
 const pad = (n) => String(n).padStart(2, '0');
 const ymdOf = (y, m, d) => {
@@ -142,7 +142,23 @@ export function extractHomework(html, baseUrl = '') {
     }
     last = null;
   }
-  return out.slice(0, 10);
+  // Lines elsewhere in the chapter that have links ("Answer Prelab Questions - Student Lab Packet"),
+  // so homework without its own link can borrow the matching one.
+  const related = lines.filter((l) => l.links.length && !l.linkOnly).map((l) => ({ text: l.text, links: l.links.map(resolve).filter(Boolean) }));
+  const items = out.slice(0, 10);
+  for (const it of items) {
+    if (it.links.length) continue;
+    const mine = sigWords(it.text);
+    const match = related.find((r) => r.text !== it.text && [...sigWords(r.text)].filter((w) => mine.has(w)).length >= 2);
+    if (match) it.links.push(...match.links);
+  }
+  return items;
+}
+
+const GENERIC = new Set(['complete', 'finish', 'class', 'next', 'from', 'with', 'this', 'that', 'your', 'have', 'will', 'today', 'students', 'homework', 'read', 'page', 'pages', 'work', 'quiz', 'test', 'study', 'turn', 'here', 'answer']);
+function sigWords(text) {
+  return new Set(text.toLowerCase().replace(/pre-/g, 'pre').replace(/[^a-z0-9 ]+/g, ' ').split(' ')
+    .filter((w) => (w.length >= 4 || /^\d+$/.test(w)) && !GENERIC.has(w)));
 }
 
 // "Projecto-Pintores Espanoles Due: Nov.18th" → "Projecto-Pintores Espanoles"
