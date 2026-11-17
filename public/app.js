@@ -596,6 +596,7 @@ $('#class-dialog').addEventListener('close', () => {
     if (name) {
       if (editingClassId) {
         const c = classById(editingClassId);
+        if (name !== c.name) c.renamed = true; // the sync won't touch names you chose
         touch(Object.assign(c, { name, color }));
         if (f.day.value && f.day.value !== c.day) setClassDay(c, f.day.value);
         commit();
