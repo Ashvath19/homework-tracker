@@ -1,0 +1,21 @@
+name: Check Moodle
+
+on:
+  schedule:
+    - cron: '17 * * * *' # every hour
+    - cron: '5 3 * * *'  # evening reminder: 7:05pm PST / 8:05pm PDT
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Call the site
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          MODE=sync
+          if [ "${{ github.event.schedule }}" = "5 3 * * *" ]; then MODE=remind; fi
+          curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" "$SITE_URL/api/sync?mode=$MODE"
