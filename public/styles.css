@@ -235,3 +235,15 @@ body.locked main { max-width: none; display: grid; place-items: center; min-heig
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .field { flex: 1 1 240px; border: 1px solid var(--border); background: var(--bg); border-radius: 8px; padding: 8px 10px; font-family: ui-monospace, monospace; font-size: 13px; }
 .card a { color: var(--accent); }
+
+/* Key / code login */
+.login { width: min(420px, 100%); }
+.login-form { display: flex; flex-direction: column; gap: 10px; }
+.login-form .hint { margin: 0; }
+.steps { margin: 0; padding-left: 20px; line-height: 1.6; }
+.login a { color: var(--accent); }
+.login .link-btn { align-self: center; }
+.code-input { font-size: 24px; letter-spacing: .3em; text-align: center; }
+.link-box { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin: 4px 0 12px; text-align: center; }
+.link-code { font: 700 34px/1.2 ui-monospace, monospace; letter-spacing: .12em; }
+.card details summary { cursor: pointer; margin: 6px 0; }
