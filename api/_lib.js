@@ -106,9 +106,12 @@ function safeEq(a, b) {
   const x = Buffer.from(String(a)), y = Buffer.from(String(b));
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
-// The hourly GitHub job proves itself with this secret.
+// Schedulers prove themselves with a secret: CRON_SECRET for the GitHub backup, CRONJOB_SECRET
+// for cron-job.org. Separate secrets, so either one can be replaced without touching the other.
 export function isCron(req) {
-  return !!process.env.CRON_SECRET && safeEq(req.headers.authorization || '', `Bearer ${process.env.CRON_SECRET}`);
+  const auth = req.headers.authorization || '';
+  return [process.env.CRON_SECRET, process.env.CRONJOB_SECRET]
+    .some((s) => !!s && safeEq(auth, `Bearer ${s}`));
 }
 
 // ---------- encryption for Moodle keys (AES-256-GCM) ----------
