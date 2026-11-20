@@ -519,6 +519,10 @@ function renderSettings() {
       </div>
       <p class="hint">Import adds everything from a backup file to what's already here.</p>
     </section>
+    ${ONLINE ? `<section class="card"><h3>Share with a friend</h3>
+      <p>Send a friend the link. They log in with their own Moodle key and only see their own homework.</p>
+      <div class="row"><button class="btn" data-action="share">Share the link</button></div>
+    </section>` : ''}
     ${ONLINE && me ? `<section class="card"><h3>Account</h3>
       <p>Logged in as <b>${esc(me.name)}</b>.</p>
       <div class="row"><button class="primary" data-action="link-device">Log in on another device</button></div>
@@ -844,6 +848,17 @@ document.addEventListener('click', async (e) => {
         const { code, expiresAt } = await api('POST', '/api/link');
         showLinkCode(code, expiresAt);
       } catch (err) { toast(err.message); }
+      break;
+    }
+    case 'share': {
+      const url = location.origin;
+      const text = 'I use this to keep track of homework from Moodle. It sorts everything by due date and can remind you at 6pm what\'s due tomorrow. You log in with your Moodle key; the login page shows where to find it.';
+      try {
+        if (navigator.share) await navigator.share({ title: 'Homework', text, url });
+        else { await navigator.clipboard.writeText(`${text}\n${url}`); toast('Copied. Paste it to a friend.'); }
+      } catch (err) {
+        if (err.name !== 'AbortError') toast('Couldn\'t share. The link is ' + url);
+      }
       break;
     }
   }
