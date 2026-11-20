@@ -6,12 +6,7 @@ name: Check Moodle
 on:
   schedule:
     - cron: '37 */2 * * *' # every 2 hours
-  workflow_dispatch:
-    inputs:
-      force:
-        description: 'Run even if the site checked recently'
-        type: boolean
-        default: false
+  workflow_dispatch: # running it by hand always checks, even if the site checked recently
 
 jobs:
   run:
@@ -22,5 +17,5 @@ jobs:
         env:
           SITE_URL: ${{ secrets.SITE_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          FORCE: ${{ inputs.force && '&force=1' || '' }}
+          FORCE: "${{ github.event_name == 'workflow_dispatch' && '&force=1' || '' }}"
         run: curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" "$SITE_URL/api/sync?mode=sync$FORCE"
