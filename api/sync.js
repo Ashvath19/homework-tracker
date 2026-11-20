@@ -14,18 +14,25 @@ const ICONS = { homework: '📄', reading: '📖', essay: '✍️', lab: '🧪',
 const CRON_LOCK = 'hw:cron:last';
 const CRON_GAP_MIN = 100; // a bit under 2 hours, so a slightly early run still counts
 
-// Everyone, one at a time: a problem with one person never blocks the rest.
+// Everyone, a few at a time: one person's sync takes ~15-20 seconds and a run must finish
+// within Vercel's 5-minute limit. 3 at a time keeps the load on the school's Moodle gentle.
+// A problem with one person never blocks the rest.
+const PARALLEL = 3;
 async function runAll(mode) {
   const users = (await redis.smembers(K.users)) || [];
   const results = [];
-  for (const uid of users) {
-    const r = {};
-    try { if (mode === 'sync') r.sync = await syncUser(uid, { notify: true }); }
-    catch (e) { r.sync = { error: String(e.message || e) }; }
-    try { r.remind = await remindUser(uid); } // does nothing before 6pm or if already sent today
-    catch (e) { r.remind = { error: String(e.message || e) }; }
-    results.push(r);
-  }
+  const queue = [...users];
+  const worker = async () => {
+    for (let uid; (uid = queue.shift()); ) {
+      const r = {};
+      try { if (mode === 'sync') r.sync = await syncUser(uid, { notify: true }); }
+      catch (e) { r.sync = { error: String(e.message || e) }; }
+      try { r.remind = await remindUser(uid); } // does nothing before 6pm or if already sent today
+      catch (e) { r.remind = { error: String(e.message || e) }; }
+      results.push(r);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(PARALLEL, users.length) }, worker));
   return { users: users.length, results };
 }
 
