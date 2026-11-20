@@ -109,8 +109,10 @@ function safeEq(a, b) {
 // Schedulers prove themselves with a secret: CRON_SECRET for the GitHub backup, CRONJOB_SECRET
 // for cron-job.org. Separate secrets, so either one can be replaced without touching the other.
 export function isCron(req) {
-  const auth = req.headers.authorization || '';
+  const auth = (req.headers.authorization || '').trim();
+  // trim: a secret pasted into Vercel can pick up an invisible trailing line break
   return [process.env.CRON_SECRET, process.env.CRONJOB_SECRET]
+    .map((s) => (s || '').trim())
     .some((s) => !!s && safeEq(auth, `Bearer ${s}`));
 }
 
