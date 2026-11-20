@@ -240,6 +240,7 @@ function renderLogin() {
     <div class="login">
       <h1><span class="hl">Homework</span></h1>
       <p class="lede">Your Moodle assignments, sorted by when they're due.</p>
+      <p class="beta-note"><b>Still being tested.</b> It might miss some homework or show the wrong due date, especially for classes with different teachers. Double-check Moodle for anything important, and tell whoever sent you the link if something's off.</p>
       ${loginMode === 'code' ? codeForm : keyForm}
       <p class="err" id="login-err" role="alert"></p>
     </div>`;

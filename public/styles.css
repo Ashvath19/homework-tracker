@@ -208,7 +208,9 @@ body.locked .app { grid-template-columns: 1fr; }
 body.locked main { max-width: none; display: grid; place-items: center; min-height: 100vh; padding: 32px 16px; }
 .login { width: min(380px, 100%); }
 .login h1 { font-size: 46px; font-weight: 800; letter-spacing: -.035em; line-height: 1.05; margin: 0 0 12px; }
-.login .lede { color: var(--ink-2); margin: 0 0 28px; font-size: 16px; }
+.login .lede { color: var(--ink-2); margin: 0 0 16px; font-size: 16px; }
+.login .beta-note { margin: 0 0 24px; padding: 10px 12px; font-size: 13.5px; line-height: 1.45; color: var(--ink-2); background: var(--sheet); border: 1px solid var(--rule); border-left: 3px solid var(--amber); border-radius: 8px; }
+.login .beta-note b { color: var(--amber); }
 .login-form { display: flex; flex-direction: column; gap: 10px; }
 .login-form label { font-weight: 600; font-size: 14px; }
 .login-form .field { flex: none; width: 100%; padding: 11px 12px; font-size: 15px; background: var(--sheet); }
