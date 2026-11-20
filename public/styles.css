@@ -216,7 +216,8 @@ body.locked main { max-width: none; display: grid; place-items: center; min-heig
 .login-form .hint { margin: 0; }
 .login details { margin-top: 14px; font-size: 14px; color: var(--ink-2); }
 .login details summary { cursor: pointer; color: var(--ink); font-weight: 500; }
-.login details ol { margin: 8px 0 6px; padding-left: 20px; line-height: 1.7; }
+.login details ol, .login details ul { margin: 8px 0 6px; padding-left: 20px; line-height: 1.7; }
+.login details + details { margin-top: 6px; }
 .login .switch { margin-top: 6px; align-self: flex-start; }
 .login-form .code-input { font-size: 26px; letter-spacing: .3em; text-align: center; font-variant-numeric: tabular-nums; }
 .login .err { color: var(--red); margin: 10px 0 0; min-height: 1.4em; font-size: 14px; }

@@ -205,6 +205,15 @@ function renderLogin() {
         </ol>
         No row like that? Sign in to the Moodle app on your phone once, then reload the page.
       </details>
+      <details>
+        <summary>What happens to my key?</summary>
+        <ul>
+          <li>It's stored encrypted and only used to read your courses, assignments, quizzes, and calendar. This site never submits work, sends messages, or looks at your grades.</li>
+          <li>Only you can see your homework list here.</li>
+          <li>This site is run by a student, not by VCS. Whoever runs it could technically use your key, so only use it if you trust them.</li>
+          <li>To cut off access anytime, click <b>Reset</b> on Moodle's <a href="https://learn.vcs.net/user/managetoken.php" target="_blank" rel="noopener">Security keys page</a>, or delete your account in Settings.</li>
+        </ul>
+      </details>
       <button type="button" class="link-btn switch" data-action="login-mode" data-mode="code">Log in with a code from another device</button>
     </form>`;
   const codeForm = `
