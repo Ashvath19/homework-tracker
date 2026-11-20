@@ -1,5 +1,8 @@
-// POST /api/sync             → check Moodle now (you: just your account; hourly job: everyone)
-// POST /api/sync?mode=remind → evening "due tomorrow" notifications (hourly job only)
+// POST /api/sync             → check Moodle now (you: just your account; scheduler: everyone,
+//                                then the 6pm "due tomorrow" reminder once it's 6pm or later)
+// POST /api/sync?mode=remind → only the reminder (scheduler only)
+// POST /api/sync?force=1     → scheduler: run even if another run happened in the last ~2 hours
+import { waitUntil } from '@vercel/functions';
 import {
   redis, K, getState, putState, mergeState, getProfile, saveProfile, currentUser, isCron,
   decrypt, sendPush, ymd, addDays, dueLabel, TZ,
@@ -8,19 +11,40 @@ import { diffWithMoodle } from './_moodle.js';
 import { diffLessonPlans, LP_VERSION } from './_lessons.js';
 
 const ICONS = { homework: '📄', reading: '📖', essay: '✍️', lab: '🧪', project: '🛠️', quiz: '❓', test: '🚨' };
+const CRON_LOCK = 'hw:cron:last';
+const CRON_GAP_MIN = 100; // a bit under 2 hours, so a slightly early run still counts
+
+// Everyone, one at a time: a problem with one person never blocks the rest.
+async function runAll(mode) {
+  const users = (await redis.smembers(K.users)) || [];
+  const results = [];
+  for (const uid of users) {
+    const r = {};
+    try { if (mode === 'sync') r.sync = await syncUser(uid, { notify: true }); }
+    catch (e) { r.sync = { error: String(e.message || e) }; }
+    try { r.remind = await remindUser(uid); } // does nothing before 6pm or if already sent today
+    catch (e) { r.remind = { error: String(e.message || e) }; }
+    results.push(r);
+  }
+  return { users: users.length, results };
+}
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   const mode = req.query.mode === 'remind' ? 'remind' : 'sync';
 
   if (isCron(req)) {
-    const users = (await redis.smembers(K.users)) || [];
-    const results = {};
-    for (const uid of users) { // one at a time: a problem with one person never blocks the rest
-      try { results[uid] = mode === 'remind' ? await remindUser(uid) : await syncUser(uid, { notify: true }); }
-      catch (e) { results[uid] = { error: String(e.message || e) }; }
+    // Two schedulers call this (cron-job.org, with GitHub Actions as a backup). Only the first
+    // call in each ~2-hour window does anything, so they never double-check or double-notify.
+    if (mode === 'sync') {
+      const fresh = await redis.set(CRON_LOCK, Date.now(), { nx: true, ex: CRON_GAP_MIN * 60 });
+      if (!fresh && !req.query.force) return res.status(200).json({ ok: true, skipped: 'checked recently' });
+      if (!fresh) await redis.set(CRON_LOCK, Date.now(), { ex: CRON_GAP_MIN * 60 });
     }
-    return res.json({ ok: true, users: users.length, results: Object.values(results) });
+    // Reply right away and keep working in the background: checking everyone takes longer than
+    // cron-job.org waits for an answer (30 seconds).
+    waitUntil(runAll(mode).then((r) => console.log('scheduled run', mode, JSON.stringify(r))));
+    return res.status(202).json({ ok: true, started: mode });
   }
 
   const uid = await currentUser(req);

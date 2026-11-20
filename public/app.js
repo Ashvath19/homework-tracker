@@ -92,6 +92,18 @@ async function pull() {
   if (!ONLINE || !authed) return;
   try { adopt(await api('GET', '/api/state')); } catch (e) { console.warn('load failed', e); }
 }
+
+// The scheduled check runs every 2 hours, but a run can be missed. If Moodle hasn't been
+// checked in over 2 hours when you open the site, check now (at most once every 10 minutes).
+const STALE_MS = 2 * 60 * 60 * 1000;
+let lastAutoSync = 0;
+async function syncIfStale() {
+  if (!ONLINE || !authed || !moodle.connected) return;
+  if (meta.lastSync && Date.now() - meta.lastSync < STALE_MS) return;
+  if (Date.now() - lastAutoSync < 10 * 60 * 1000) return;
+  lastAutoSync = Date.now();
+  try { await api('POST', '/api/sync'); await pull(); } catch (e) { console.warn('auto check failed', e); }
+}
 function adopt(server) {
   meta = server.meta || {};
   const merged = mergeState(state, server);
@@ -483,7 +495,7 @@ function renderSettings() {
 
   const moodleCard = !ONLINE ? `<p>Moodle sync only works on the website version.</p>` : `
     <p>Connected as <b>${esc(moodle.name || 'you')}</b>. ${meta.lastSync ? `Last checked ${ago(meta.lastSync)}${meta.lastCount != null ? `, ${meta.lastCount} upcoming item${meta.lastCount === 1 ? '' : 's'}` : ''}.` : 'Not checked yet.'}
-       It checks again every hour on its own.</p>
+       It checks again every 2 hours on its own, and whenever you open the site after a longer gap.</p>
     ${meta.lastError ? `<p class="bad">${esc(meta.lastError)}</p>` : ''}
     <div class="row"><button class="btn" data-action="sync-now">Check Moodle now</button></div>
     <p class="hint">Things you submit on Moodle get checked off automatically.</p>
@@ -964,7 +976,7 @@ async function boot(again = false) {
     window.addEventListener('hashchange', render);
     if (!ONLINE) { render(); return; }
     // stay fresh: re-check when you come back to the tab/app, and every few minutes while open
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) pull(); });
+    document.addEventListener('visibilitychange', async () => { if (!document.hidden) { await pull(); syncIfStale(); } });
     setInterval(() => { if (!document.hidden) pull(); }, 3 * 60 * 1000);
   }
 
@@ -986,5 +998,6 @@ async function boot(again = false) {
   render();
   registerSW();
   await pull();
+  syncIfStale();
 }
 boot();

@@ -2,9 +2,12 @@
   "name": "homework-tracker",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@upstash/redis": "^1.41.0",
+    "@vercel/functions": "^2.2.13",
     "web-push": "^3.6.7"
   }
 }

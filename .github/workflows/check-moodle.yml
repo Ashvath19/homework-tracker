@@ -1,13 +1,17 @@
 name: Check Moodle
 
+# Backup only. cron-job.org calls /api/sync every 2 hours; GitHub often skips scheduled runs,
+# so it can't be the main scheduler. The site ignores any call within ~2 hours of the last one,
+# so this never doubles up. Each run also sends the 6pm reminder once it's 6pm or later.
 on:
   schedule:
-    - cron: '17 * * * *' # every hour
-    # 6pm reminder. GitHub runs on UTC with no daylight saving, so try at both 01:00 and 02:00 UTC;
-    # the site only sends once it's 6pm or later in California, and only once a day.
-    - cron: '0 1 * * *'
-    - cron: '0 2 * * *'
+    - cron: '37 */2 * * *' # every 2 hours
   workflow_dispatch:
+    inputs:
+      force:
+        description: 'Run even if the site checked recently'
+        type: boolean
+        default: false
 
 jobs:
   run:
@@ -18,7 +22,5 @@ jobs:
         env:
           SITE_URL: ${{ secrets.SITE_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-        run: |
-          MODE=sync
-          case "${{ github.event.schedule }}" in "0 1 * * *"|"0 2 * * *") MODE=remind ;; esac
-          curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" "$SITE_URL/api/sync?mode=$MODE"
+          FORCE: ${{ inputs.force && '&force=1' || '' }}
+        run: curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" "$SITE_URL/api/sync?mode=sync$FORCE"
