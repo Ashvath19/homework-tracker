@@ -240,7 +240,10 @@ function renderLogin() {
     <div class="login">
       <h1><span class="hl">Homework</span></h1>
       <p class="lede">Your Moodle assignments, sorted by when they're due.</p>
-      <p class="beta-note"><b>Still being tested.</b> It might miss some homework or show the wrong due date, especially for classes with different teachers. Double-check Moodle for anything important, and tell whoever sent you the link if something's off.</p>
+      <div class="beta-note">
+        <p><b>Still being tested.</b> It might miss some homework or show the wrong due date, especially for classes with different teachers. Double-check Moodle for anything important, and tell whoever sent you the link if something's off.</p>
+        <p><b>Your Moodle key is like a password.</b> This site stores it to read your Moodle account as you. It's run by a student, not VCS, so only use it if you trust whoever runs it. You can cut off access anytime by resetting your key on Moodle.</p>
+      </div>
       ${loginMode === 'code' ? codeForm : keyForm}
       <p class="err" id="login-err" role="alert"></p>
     </div>`;

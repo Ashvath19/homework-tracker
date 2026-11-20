@@ -211,6 +211,8 @@ body.locked main { max-width: none; display: grid; place-items: center; min-heig
 .login .lede { color: var(--ink-2); margin: 0 0 16px; font-size: 16px; }
 .login .beta-note { margin: 0 0 24px; padding: 10px 12px; font-size: 13.5px; line-height: 1.45; color: var(--ink-2); background: var(--sheet); border: 1px solid var(--rule); border-left: 3px solid var(--amber); border-radius: 8px; }
 .login .beta-note b { color: var(--amber); }
+.login .beta-note p { margin: 0; }
+.login .beta-note p + p { margin-top: 8px; }
 .login-form { display: flex; flex-direction: column; gap: 10px; }
 .login-form label { font-weight: 600; font-size: 14px; }
 .login-form .field { flex: none; width: 100%; padding: 11px 12px; font-size: 15px; background: var(--sheet); }
