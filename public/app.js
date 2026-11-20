@@ -129,6 +129,75 @@ document.addEventListener('focusout', () => setTimeout(() => {
   }
 }, 0));
 
+// ---------- calendar (right side, wide screens) ----------
+let calMonth = null; // 'YYYY-MM' being shown
+let calSel = null;   // 'YYYY-MM-DD' selected day
+const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+// cls: a class to show only its homework, null for everything, undefined to hide the calendar
+function renderCalendar(cls) {
+  const el = $('#cal');
+  if (!el) return;
+  if (cls === undefined) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+
+  const today = dateStr(new Date());
+  calSel ||= today;
+  calMonth ||= today.slice(0, 7);
+  const [y, m] = calMonth.split('-').map(Number);
+  const first = new Date(y, m - 1, 1);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const letters = school?.days || {};
+
+  const mine = tasks().filter((t) => t.due && classById(t.classId) && (!cls || t.classId === cls.id));
+  const byDay = {};
+  for (const t of mine) (byDay[t.due] ||= []).push(t);
+
+  const cells = [];
+  for (let i = 0; i < first.getDay(); i++) cells.push('<span class="cal-cell empty"></span>');
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ds = `${calMonth}-${String(d).padStart(2, '0')}`;
+    const todo = (byDay[ds] || []).filter((t) => !t.done);
+    const big = todo.some((t) => TAGS[t.tag]?.big);
+    const dots = todo.slice(0, 3).map((t) => `<i style="background:${classById(t.classId).color}"></i>`).join('')
+      + (todo.length > 3 ? '<b>+</b>' : '');
+    const letter = letters[ds];
+    const cl = ['cal-cell', ds === today && 'today', ds === calSel && 'sel', ds < today && todo.length && 'late',
+      big && 'big', !letter && 'off'].filter(Boolean).join(' ');
+    const label = parseDate(ds).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+      + (todo.length ? `, ${todo.length} due` : '') + (letter ? `, ${letter} day` : '');
+    cells.push(`<button class="${cl}" data-action="cal-day" data-date="${ds}" aria-label="${esc(label)}" aria-pressed="${ds === calSel}">
+      <span class="cal-num">${d}</span>${letter && letter !== 'C' ? `<span class="cal-letter">${letter}</span>` : ''}
+      <span class="cal-dots">${dots}</span></button>`);
+  }
+
+  const sel = (byDay[calSel] || []).sort((a, b) => a.done - b.done || byDue(a, b));
+  const selLetter = letters[calSel];
+  const selTitle = calSel === today ? 'Today' : calSel === tomorrow() ? 'Tomorrow'
+    : parseDate(calSel).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+
+  el.innerHTML = `
+    <div class="cal-inner">
+      <div class="cal-head">
+        <h3>${first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</h3>
+        <button class="icon-btn" data-action="cal-move" data-step="-1" aria-label="Previous month">‹</button>
+        <button class="icon-btn" data-action="cal-move" data-step="1" aria-label="Next month">›</button>
+      </div>
+      ${cls ? `<p class="cal-for"><span class="dot" style="background:${cls.color}"></span>${esc(cls.name)} only</p>` : ''}
+      <div class="cal-grid">${WEEKDAYS.map((w) => `<span class="cal-wd">${w}</span>`).join('')}${cells.join('')}</div>
+      ${calMonth !== today.slice(0, 7) || calSel !== today ? `<button class="link-btn cal-today" data-action="cal-today">Back to today</button>` : ''}
+      <div class="cal-day">
+        <h4>${selTitle}${selLetter && selLetter !== 'C' ? ` <span class="cal-pill">${selLetter} day</span>` : !selLetter ? ' <span class="cal-pill off">No school</span>' : ''}</h4>
+        ${sel.length ? `<ul class="cal-list">${sel.map((t) => {
+          const c = classById(t.classId);
+          return `<li data-id="${t.id}" class="${t.done ? 'done' : ''}"><button data-action="open-task">
+            <span class="dot" style="background:${c.color}"></span>
+            <span class="cal-t">${TAGS[t.tag]?.big ? `<b>${TAGS[t.tag].label}:</b> ` : ''}${esc(t.title)}<small>${esc(c.name)}</small></span></button></li>`;
+        }).join('')}</ul>` : `<p class="cal-none">Nothing due.</p>`}
+      </div>
+    </div>`;
+}
+
 // ---------- helpers ----------
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
@@ -198,6 +267,7 @@ function render() {
   if (route === '/settings') renderSettings();
   else if (cls) renderClass(cls);
   else renderDashboard();
+  renderCalendar(route === '/settings' ? undefined : (cls ? cls : null));
 }
 
 let loginMode = 'key';
@@ -733,6 +803,15 @@ document.addEventListener('click', async (e) => {
 
   switch (el.dataset.action) {
     case 'filter': tagFilter = el.dataset.tag || null; render(); break;
+    case 'cal-day': calSel = el.dataset.date; render(); break;
+    case 'cal-today': calSel = calMonth = null; render(); break;
+    case 'cal-move': {
+      const [y, m] = calMonth.split('-').map(Number);
+      const d = new Date(y, m - 1 + Number(el.dataset.step), 1);
+      calMonth = dateStr(d).slice(0, 7);
+      render();
+      break;
+    }
     case 'new-class': openClassDialog(null); break;
     case 'edit-class': openClassDialog(el.dataset.class); break;
     case 'edit-task': openTaskDialog(taskId); break;

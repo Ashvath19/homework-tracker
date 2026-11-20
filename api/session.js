@@ -2,6 +2,7 @@
 // DELETE /api/session → log out of this device
 import { currentUser, getProfile, endSession, ymd } from './_lib.js';
 import { dayLetter, nextClassDay } from './_lessons.js';
+import SCHOOL from './_schoolDays.json' with { type: 'json' };
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -25,5 +26,5 @@ export default async function handler(req, res) {
 // Today's A/B/C letter plus the next A day and B day, for the dashboard header.
 function schoolDays() {
   const today = ymd(new Date());
-  return { today, letter: dayLetter(today), nextA: nextClassDay(today, 'A'), nextB: nextClassDay(today, 'B') };
+  return { today, letter: dayLetter(today), nextA: nextClassDay(today, 'A'), nextB: nextClassDay(today, 'B'), days: SCHOOL.days };
 }
