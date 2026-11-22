@@ -129,6 +129,217 @@ document.addEventListener('focusout', () => setTimeout(() => {
   }
 }, 0));
 
+// ---------- school schedules ----------
+// VCS (Moodle) accounts: A/B/C letters from the VCS calendar, sent by the server.
+// "Log your own" accounts: their own schedule — a built-in school file (e.g. Wilcox), or a pattern they set up.
+let schedule = null;   // own accounts: { type: 'school'|'weekday'|'rotation'|'daily', ..., off: [dates] }
+let schoolCal = null;  // the loaded school file, when schedule.type === 'school'
+let schoolList = null; // /schools/index.json, loaded for the setup page
+const isOwn = () => me?.kind === 'own';
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+async function loadSchoolCal() {
+  if (schedule?.type !== 'school') { schoolCal = null; return; }
+  const key = `hw-school:${schedule.school}`;
+  try {
+    const r = await fetch(`/schools/${schedule.school}.json`, { cache: 'no-cache' });
+    if (!r.ok) throw new Error(r.status);
+    schoolCal = await r.json();
+    safeSet(key, JSON.stringify(schoolCal));
+  } catch {
+    try { schoolCal = JSON.parse(safeGet(key)); } catch { schoolCal = null; }
+  }
+}
+
+function addDaysStr(ds, n) { const d = parseDate(ds); d.setDate(d.getDate() + n); return dateStr(d); }
+const isWeekend = (ds) => { const w = parseDate(ds).getDay(); return w === 0 || w === 6; };
+
+// What kind of school day a date is: { off: true } for no school, { label, note } for a school day
+// (label '' means a regular day when every class meets), or null when we don't know.
+function dayInfo(ds) {
+  if (!isOwn()) {
+    if (!school?.days) return null;
+    const L = school.days[ds];
+    return L ? { label: L === 'C' ? '' : L } : { off: true };
+  }
+  const s = schedule;
+  if (!s) return null;
+  if (isWeekend(ds) || s.off?.includes(ds)) return { off: true };
+  if (s.type === 'daily') return { label: '' };
+  if (s.type === 'weekday') return { label: s.days?.[parseDate(ds).getDay()] || '' };
+  if (s.type === 'rotation') {
+    // count school days from the anchor (which is labels[0]), skipping weekends and days off
+    let n = 0;
+    const step = ds >= s.anchor ? 1 : -1;
+    for (let d = s.anchor; d !== ds; d = addDaysStr(d, step)) {
+      const next = addDaysStr(d, step);
+      if (!isWeekend(step > 0 ? next : d) && !s.off?.includes(step > 0 ? next : d)) n += step;
+    }
+    return { label: s.labels[((n % 2) + 2) % 2] };
+  }
+  if (s.type === 'school') {
+    const f = schoolCal;
+    if (!f) return null;
+    if (ds < f.first) return { off: true };
+    if (ds > f.last) {
+      // summer break, then (until next year's calendar is added) just the weekly pattern
+      if (ds < `${f.last.slice(0, 4)}-08-01`) return { off: true };
+      return { label: f.pattern.days[parseDate(ds).getDay()] || '', unsure: true };
+    }
+    if (f.off.includes(ds)) return { off: true };
+    if (f.special?.[ds]) return { label: f.special[ds].label, note: f.special[ds].note };
+    return { label: f.pattern.days[parseDate(ds).getDay()] || '' };
+  }
+  return null;
+}
+
+// The day choices a class can have ("A"/"B", "Odd"/"Even", ...). Empty when classes meet every day.
+function classDayOptions() {
+  if (!isOwn()) return school ? ['A', 'B'] : [];
+  const s = schedule;
+  if (!s) return [];
+  if (s.type === 'school') return schoolCal?.classDays || [];
+  if (s.type === 'rotation') return [...s.labels];
+  if (s.type === 'weekday') return [...new Set(Object.values(s.days || {}).filter((l) => l && l !== 'All'))];
+  return [];
+}
+// Does this class meet on that day?
+function meets(c, info) {
+  if (!info || info.off) return false;
+  if (!info.label || info.label === 'All' || info.label === 'Finals' || !c?.day) return true;
+  return c.day === info.label || !classDayOptions().includes(info.label);
+}
+// Next day (after today) the class meets — the natural due date for new homework.
+function nextMeeting(c) {
+  let ds = dateStr(new Date());
+  if (!c?.day || !classDayOptions().length) return tomorrow();
+  for (let i = 0; i < 40; i++) {
+    ds = addDaysStr(ds, 1);
+    const info = dayInfo(ds);
+    if (!info) return tomorrow();
+    if (meets(c, info)) return ds;
+  }
+  return tomorrow();
+}
+// Short text for a day, for the calendar cell and pill.
+function dayName(info, long) {
+  if (!info || info.off || !info.label) return '';
+  if (!isOwn()) return long ? `${info.label} day` : info.label;
+  const names = schoolCal?.labelNames || {};
+  return long ? (names[info.label] || `${info.label} day`) : info.label;
+}
+
+// ---------- passkeys (browser side) ----------
+const fromB64u = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (s.length % 4)) % 4)), (c) => c.charCodeAt(0));
+const toB64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const passkeysSupported = () => !!window.PublicKeyCredential && !!navigator.credentials;
+
+async function passkeyCreate(options) {
+  const pk = PublicKeyCredential.parseCreationOptionsFromJSON ? PublicKeyCredential.parseCreationOptionsFromJSON(options) : {
+    ...options, challenge: fromB64u(options.challenge), user: { ...options.user, id: fromB64u(options.user.id) },
+    excludeCredentials: (options.excludeCredentials || []).map((c) => ({ ...c, id: fromB64u(c.id) })),
+  };
+  const cred = await navigator.credentials.create({ publicKey: pk });
+  if (cred.toJSON) try { return cred.toJSON(); } catch {}
+  const r = cred.response;
+  return {
+    id: cred.id, rawId: toB64u(cred.rawId), type: cred.type, authenticatorAttachment: cred.authenticatorAttachment,
+    clientExtensionResults: cred.getClientExtensionResults(),
+    response: { clientDataJSON: toB64u(r.clientDataJSON), attestationObject: toB64u(r.attestationObject), transports: r.getTransports?.() || [] },
+  };
+}
+async function passkeyGet(options) {
+  const pk = PublicKeyCredential.parseRequestOptionsFromJSON ? PublicKeyCredential.parseRequestOptionsFromJSON(options) : {
+    ...options, challenge: fromB64u(options.challenge),
+    allowCredentials: (options.allowCredentials || []).map((c) => ({ ...c, id: fromB64u(c.id) })),
+  };
+  const cred = await navigator.credentials.get({ publicKey: pk });
+  if (cred.toJSON) try { return cred.toJSON(); } catch {}
+  const r = cred.response;
+  return {
+    id: cred.id, rawId: toB64u(cred.rawId), type: cred.type, authenticatorAttachment: cred.authenticatorAttachment,
+    clientExtensionResults: cred.getClientExtensionResults(),
+    response: {
+      clientDataJSON: toB64u(r.clientDataJSON), authenticatorData: toB64u(r.authenticatorData),
+      signature: toB64u(r.signature), userHandle: r.userHandle ? toB64u(r.userHandle) : undefined,
+    },
+  };
+}
+// Runs both steps of a passkey ceremony with the server.
+async function passkeyFlow(kind, extra = {}) {
+  const start = await api('POST', '/api/login', { passkey: `${kind}-start`, ...extra });
+  let credential;
+  try {
+    credential = kind === 'login' ? await passkeyGet(start.options) : await passkeyCreate(start.options);
+  } catch (e) {
+    if (e.name === 'NotAllowedError' || e.name === 'AbortError') throw new Error('Cancelled. Try again when you\'re ready.');
+    if (e.name === 'InvalidStateError') throw new Error('This device already has a passkey for this account.');
+    throw new Error("Your device couldn't make a passkey. Try another browser, or update this one.");
+  }
+  return api('POST', '/api/login', { passkey: `${kind}-finish`, ticket: start.ticket, credential });
+}
+async function saveSchedule(s) {
+  const r = await api('PUT', '/api/account', { schedule: s });
+  schedule = r.schedule;
+  await loadSchoolCal();
+}
+
+// ---------- schedule setup page (#/setup), "log your own" accounts ----------
+let setupMode = null; // null (ask school) | 'manual'
+function renderSetup() {
+  const sch = schoolList?.schools || [];
+  const today = dateStr(new Date());
+  let nextSchoolDay = today;
+  while (isWeekend(nextSchoolDay)) nextSchoolDay = addDaysStr(nextSchoolDay, 1);
+  const whenWord = nextSchoolDay === today ? 'Today' : `${WEEKDAY_NAMES[parseDate(nextSchoolDay).getDay()]}`;
+  const cur = schedule || {};
+  const days = cur.type === 'weekday' ? cur.days : { 1: '', 2: '', 3: '', 4: '', 5: '' };
+  const labels = cur.type === 'rotation' ? cur.labels : ['A', 'B'];
+
+  $('#main').innerHTML = `
+    <div class="page-header"><h2>Your school schedule</h2></div>
+    <p class="subtitle">This lets the calendar show which classes meet each day, and new homework default to your next class.</p>
+    ${setupMode !== 'manual' ? `
+      <section class="card setup">
+        <h3>What school do you go to?</h3>
+        ${sch.length ? `<div class="school-pick">${sch.map((s) => `
+          <button class="school-btn ${cur.type === 'school' && cur.school === s.id ? 'on' : ''}" data-action="pick-school" data-school="${s.id}">
+            <b>${esc(s.name)}</b><small>${esc(s.place || '')}</small></button>`).join('')}</div>` : '<p class="hint">Loading schools…</p>'}
+        <p class="hint">Only a few schools are built in so far. Not on the list? Set yours up yourself: it takes a minute.</p>
+        <div class="row"><button class="btn" data-action="setup-manual">My school isn't listed</button></div>
+      </section>` : `
+      <form class="card setup" data-form="setup">
+        <h3>How does your schedule work?</h3>
+        <label class="opt"><input type="radio" name="type" value="daily" ${cur.type === 'daily' ? 'checked' : ''}>
+          <span><b>Every class, every day</b><small>A normal schedule with no rotation.</small></span></label>
+        <label class="opt"><input type="radio" name="type" value="weekday" ${cur.type === 'weekday' ? 'checked' : ''}>
+          <span><b>Same pattern every week</b><small>Like odd periods on Tue/Thu, even on Wed/Fri, and all classes Monday.</small></span></label>
+        <div class="opt-more" data-for="weekday">
+          <div class="wk-grid">${[1, 2, 3, 4, 5].map((d) => `
+            <label>${WEEKDAY_NAMES[d].slice(0, 3)}<input name="d${d}" value="${esc(days[d] || '')}" maxlength="12" placeholder="All"></label>`).join('')}</div>
+          <p class="hint">Name each day (like Odd, Even, All). Leave a day blank or type All if every class meets.
+            <button type="button" class="link-btn" data-action="preset-oddeven">Fill in odd/even with all classes Monday</button></p>
+        </div>
+        <label class="opt"><input type="radio" name="type" value="rotation" ${cur.type === 'rotation' ? 'checked' : ''}>
+          <span><b>Two days that alternate</b><small>A/B, Day 1/Day 2, and so on, switching every school day.</small></span></label>
+        <div class="opt-more" data-for="rotation">
+          <div class="row">
+            <label>Day names <input name="l0" value="${esc(labels[0])}" maxlength="12" required class="field short"></label>
+            <label>and <input name="l1" value="${esc(labels[1])}" maxlength="12" required class="field short"></label>
+          </div>
+          <label>${whenWord} is <select name="now">
+            <option value="0">the first one (${esc(labels[0])})</option><option value="1">the second one (${esc(labels[1])})</option>
+          </select></label>
+          <p class="hint">Days off can throw it off. Mark them in the calendar, or fix it later in Settings.</p>
+        </div>
+        <div class="row">
+          <button class="primary">Save schedule</button>
+          <button type="button" class="link-btn" data-action="setup-back">Back to the school list</button>
+        </div>
+      </form>`}
+    ${schedule ? '' : `<p><button class="link-btn" data-action="setup-skip">Skip for now</button></p>`}`;
+}
+
 // ---------- calendar (right side, wide screens) ----------
 let calMonth = null; // 'YYYY-MM' being shown
 let calSel = null;   // 'YYYY-MM-DD' selected day
@@ -147,7 +358,6 @@ function renderCalendar(cls) {
   const [y, m] = calMonth.split('-').map(Number);
   const first = new Date(y, m - 1, 1);
   const daysInMonth = new Date(y, m, 0).getDate();
-  const letters = school?.days || {};
 
   const mine = tasks().filter((t) => t.due && classById(t.classId) && (!cls || t.classId === cls.id));
   const byDay = {};
@@ -161,18 +371,20 @@ function renderCalendar(cls) {
     const big = todo.some((t) => TAGS[t.tag]?.big);
     const dots = todo.slice(0, 3).map((t) => `<i style="background:${classById(t.classId).color}"></i>`).join('')
       + (todo.length > 3 ? '<b>+</b>' : '');
-    const letter = letters[ds];
+    const info = dayInfo(ds);
+    const letter = dayName(info);
     const cl = ['cal-cell', ds === today && 'today', ds === calSel && 'sel', ds < today && todo.length && 'late',
-      big && 'big', !letter && 'off'].filter(Boolean).join(' ');
+      big && 'big', (info ? info.off : isWeekend(ds)) && 'off'].filter(Boolean).join(' ');
     const label = parseDate(ds).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
-      + (todo.length ? `, ${todo.length} due` : '') + (letter ? `, ${letter} day` : '');
+      + (todo.length ? `, ${todo.length} due` : '') + (letter ? `, ${dayName(info, true)}` : info?.off ? ', no school' : '');
     cells.push(`<button class="${cl}" data-action="cal-day" data-date="${ds}" aria-label="${esc(label)}" aria-pressed="${ds === calSel}">
-      <span class="cal-num">${d}</span>${letter && letter !== 'C' ? `<span class="cal-letter">${letter}</span>` : ''}
+      <span class="cal-num">${d}</span>${letter ? `<span class="cal-letter">${esc(letter.slice(0, 4))}</span>` : ''}
       <span class="cal-dots">${dots}</span></button>`);
   }
 
   const sel = (byDay[calSel] || []).sort((a, b) => a.done - b.done || byDue(a, b));
-  const selLetter = letters[calSel];
+  const selInfo = dayInfo(calSel);
+  const canMark = isOwn() && schedule && !isWeekend(calSel) && !(selInfo?.off && !schedule.off?.includes(calSel));
   const selTitle = calSel === today ? 'Today' : calSel === tomorrow() ? 'Tomorrow'
     : parseDate(calSel).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
 
@@ -187,13 +399,15 @@ function renderCalendar(cls) {
       <div class="cal-grid">${WEEKDAYS.map((w) => `<span class="cal-wd">${w}</span>`).join('')}${cells.join('')}</div>
       ${calMonth !== today.slice(0, 7) || calSel !== today ? `<button class="link-btn cal-today" data-action="cal-today">Back to today</button>` : ''}
       <div class="cal-day">
-        <h4>${selTitle}${selLetter && selLetter !== 'C' ? ` <span class="cal-pill">${selLetter} day</span>` : !selLetter ? ' <span class="cal-pill off">No school</span>' : ''}</h4>
+        <h4>${selTitle}${dayName(selInfo) ? ` <span class="cal-pill">${esc(dayName(selInfo, true))}</span>` : selInfo?.off ? ' <span class="cal-pill off">No school</span>' : ''}</h4>
+        ${selInfo?.note ? `<p class="cal-note">${esc(selInfo.note)}</p>` : ''}
         ${sel.length ? `<ul class="cal-list">${sel.map((t) => {
           const c = classById(t.classId);
           return `<li data-id="${t.id}" class="${t.done ? 'done' : ''}"><button data-action="open-task">
             <span class="dot" style="background:${c.color}"></span>
             <span class="cal-t">${TAGS[t.tag]?.big ? `<b>${TAGS[t.tag].label}:</b> ` : ''}${esc(t.title)}<small>${esc(c.name)}</small></span></button></li>`;
         }).join('')}</ul>` : `<p class="cal-none">Nothing due.</p>`}
+        ${canMark ? `<button class="link-btn cal-mark" data-action="cal-mark-off">${schedule.off?.includes(calSel) ? 'Actually, there is school this day' : 'Mark as no school'}</button>` : ''}
       </div>
     </div>`;
 }
@@ -264,14 +478,20 @@ function render() {
   if (m && !cls) { location.hash = '#/'; return; }
 
   renderSidebar(cls ? cls.id : route);
-  if (route === '/settings') renderSettings();
+  if (route === '/setup' && isOwn()) {
+    renderSetup();
+    if (!schoolList) fetch('/schools/index.json').then((r) => r.json()).then((j) => { schoolList = j; render(); }).catch(() => {});
+  }
+  else if (route === '/settings') renderSettings();
   else if (cls) renderClass(cls);
   else renderDashboard();
-  renderCalendar(route === '/settings' ? undefined : (cls ? cls : null));
+  renderCalendar(route === '/settings' || route === '/setup' ? undefined : (cls ? cls : null));
 }
 
 let loginMode = 'key';
+let loginKind = safeGet('hw-login-kind') || 'vcs'; // 'vcs' (Moodle key) | 'own' (log your own, passkey)
 function renderLogin() {
+  if (loginKind === 'own' && loginMode !== 'code') return renderOwnLogin();
   const keyForm = `
     <form class="login-form" data-form="login-key">
       <label for="key">Moodle key</label>
@@ -304,12 +524,13 @@ function renderLogin() {
       <input id="code" name="code" class="field code-input" inputmode="numeric" maxlength="7" autocomplete="one-time-code" required>
       <button class="primary">Log in</button>
       <p class="hint">Get a code on a device where you're already logged in, under Settings.</p>
-      <button type="button" class="link-btn switch" data-action="login-mode" data-mode="key">Log in with your Moodle key instead</button>
+      <button type="button" class="link-btn switch" data-action="login-mode" data-mode="key">${loginKind === 'own' ? 'Log in with a passkey instead' : 'Log in with your Moodle key instead'}</button>
     </form>`;
   $('#main').innerHTML = `
     <div class="login">
       <h1><span class="hl">Homework</span></h1>
       <p class="lede">Your Moodle assignments, sorted by when they're due.</p>
+      ${loginTabs()}
       <div class="beta-note">
         <p><b>Still being tested.</b> It might miss some homework or show the wrong due date, especially for classes with different teachers. Double-check Moodle for anything important, and tell whoever sent you the link if something's off.</p>
         <p><b>Your Moodle key is like a password.</b> This site stores it to read your Moodle account as you. It's run by a student, not VCS, so only use it if you trust whoever runs it. You can cut off access anytime by resetting your key on Moodle.</p>
@@ -318,6 +539,40 @@ function renderLogin() {
       <p class="err" id="login-err" role="alert"></p>
     </div>`;
   $('#main input')?.focus();
+}
+
+function loginTabs() {
+  return `<div class="seg login-tabs" role="tablist">
+    <button role="tab" aria-selected="${loginKind === 'vcs'}" data-action="login-kind" data-kind="vcs">VCS (Moodle)</button>
+    <button role="tab" aria-selected="${loginKind === 'own'}" data-action="login-kind" data-kind="own">Log your own</button>
+  </div>`;
+}
+function renderOwnLogin() {
+  const ok = passkeysSupported();
+  $('#main').innerHTML = `
+    <div class="login">
+      <h1><span class="hl">Homework</span></h1>
+      <p class="lede">Keep track of your homework, sorted by when it's due.</p>
+      ${loginTabs()}
+      <div class="beta-note">
+        <p><b>Still being tested.</b> Something might not work quite right. Tell whoever sent you the link if something's off.</p>
+        <p><b>No password.</b> You log in with a passkey: your device's Face ID, fingerprint or PIN. The site never sees your face or fingerprint, and there's no password to leak.</p>
+      </div>
+      ${ok ? `
+      <form class="login-form" data-form="signup">
+        <label for="own-name">New here? Your name</label>
+        <input id="own-name" name="name" class="field" maxlength="40" autocomplete="given-name" required>
+        <button class="primary">Create account</button>
+      </form>
+      <div class="login-or"><span>or</span></div>
+      <div class="login-form">
+        <button class="btn" data-action="passkey-login">Log in with a passkey</button>
+        <button type="button" class="link-btn switch" data-action="login-mode" data-mode="code">Log in with a code from another device</button>
+      </div>` : `
+      <p class="bad">This browser can't use passkeys. Update it, or try Safari or Chrome.</p>
+      <button type="button" class="link-btn switch" data-action="login-mode" data-mode="code">Log in with a code from another device</button>`}
+      <p class="err" id="login-err" role="alert"></p>
+    </div>`;
 }
 
 function renderSidebar(active) {
@@ -332,7 +587,7 @@ function renderSidebar(active) {
       <span>${esc(c.name)}</span>
       <span class="count">${counts[c.id] || ''}</span>
     </a>`).join('') || `<p class="subtitle" style="margin:4px 10px;font-size:13px">No classes yet</p>`;
-  $('#sync-status').textContent = !moodle.connected ? (ONLINE ? 'Moodle not connected' : '')
+  $('#sync-status').textContent = !moodle.connected ? (ONLINE && !isOwn() ? 'Moodle not connected' : '')
     : meta.lastError ? '⚠️ Moodle sync problem'
     : meta.lastSync ? `Moodle checked ${ago(meta.lastSync)}` : '';
 }
@@ -348,7 +603,7 @@ function quickAddForm(classId) {
       <input name="title" placeholder="Add homework…" required autocomplete="off" aria-label="Homework title">
       ${classPicker}
       <select name="tag" aria-label="Type">${tagOptions('homework')}</select>
-      <input type="date" name="due" value="${tomorrow()}" aria-label="Due date">
+      <input type="date" name="due" value="${nextMeeting(classId ? classById(classId) : classes()[0])}" aria-label="Due date">
       <button class="primary">Add</button>
     </form>`;
 }
@@ -418,7 +673,7 @@ function renderDashboard() {
       <div class="page-header"><h2>Dashboard</h2></div>
       <p class="subtitle">Everything you have due, in date order.</p>
       <div class="empty">
-        <p>${ONLINE ? 'Nothing from Moodle yet. Your classes show up here as soon as teachers post assignments, or you can add them yourself.' : 'Start by adding your classes.'}</p>
+        <p>${ONLINE && isOwn() ? 'Add your classes to get started. Then add homework as you get it.' : ONLINE ? 'Nothing from Moodle yet. Your classes show up here as soon as teachers post assignments, or you can add them yourself.' : 'Start by adding your classes.'}</p>
         <div class="row" style="justify-content:center">
           <button class="btn" data-action="new-class">Add a class</button>
         </div>
@@ -462,9 +717,12 @@ function firstName() {
 function hero(allTodo, b) {
   const now = new Date();
   const dateLine = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
-  const letter = school?.today === dateStr(now) ? school.letter : null;
-  const dayBadge = letter
-    ? `<span class="day-badge day-${letter}" title="${letter} day on the VCHS calendar">${letter}<small>day</small></span>`
+  const todayInfo = dayInfo(dateStr(now));
+  const letter = isOwn() ? dayName(todayInfo) : (school?.today === dateStr(now) ? school.letter : null);
+  const dayBadge = !todayInfo && isOwn() ? ''
+    : letter
+    ? `<span class="day-badge day-${esc(letter)} ${letter.length > 2 ? 'wide' : ''}" title="${esc(isOwn() ? dayName(todayInfo, true) : `${letter} day on the VCHS calendar`)}">${esc(letter)}<small>day</small></span>`
+    : todayInfo && !todayInfo.off ? `<span class="day-badge day-reg" title="Regular school day">✓<small>school</small></span>`
     : `<span class="day-badge day-off" title="No classes today">–<small>no school</small></span>`;
 
   // one plain sentence about what matters next
@@ -490,12 +748,38 @@ function hero(allTodo, b) {
         <p class="hero-line">${line}</p>
         ${testLine}${late}
       </div>
-      ${ONLINE && school ? dayBadge : ''}
+      ${ONLINE && (school || schedule) ? dayBadge : ''}
     </header>`;
 }
 
 // Classes from Moodle lesson plans need to know if you're in the A-day or B-day section.
 function dayPicker() {
+  if (isOwn()) {
+    if (!schedule) return `
+      <section class="day-setup">
+        <h3>Set up your school schedule</h3>
+        <p class="hint">Tell us your school or how your days work, so the calendar shows which classes meet each day.</p>
+        <div class="row"><a class="btn" href="#/setup">Set up schedule</a></div>
+      </section>`;
+    const opts = classDayOptions();
+    const need = opts.length ? classes().filter((c) => !c.day && !c.everyDay) : [];
+    if (!need.length) return '';
+    return `
+    <section class="day-setup">
+      <h3>Which days does each class meet?</h3>
+      <p class="hint">So the calendar and due dates know when you have each class. You can change it later under Edit class.</p>
+      <ul>
+        ${need.map((c) => `
+          <li>
+            <span class="chip"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}</span>
+            <span class="seg" role="group" aria-label="${esc(c.name)} day">
+              ${opts.map((o) => `<button data-action="set-day" data-class="${c.id}" data-day="${esc(o)}">${esc(o)}</button>`).join('')}
+              <button data-action="set-day" data-class="${c.id}" data-day="">Every day</button>
+            </span>
+          </li>`).join('')}
+      </ul>
+    </section>`;
+  }
   const need = classes().filter((c) => c.moodleId && !c.day && !c.singleDay && tasks().some((t) => t.classId === c.id && t.source === 'lesson'));
   if (!need.length) return '';
   return `
@@ -546,6 +830,24 @@ function renderClass(c) {
     ${completedSection(mine.filter((t) => t.done), false)}`;
 }
 
+function scheduleCard() {
+  const s = schedule;
+  if (!s) return `<p>Not set up yet.</p><div class="row"><a class="btn" href="#/setup">Set up schedule</a></div>`;
+  let what;
+  if (s.type === 'school') what = `${esc(schoolCal?.name || s.school)}'s ${esc(schoolCal?.year || '')} calendar, with its holidays built in.`;
+  else if (s.type === 'daily') what = 'Every class meets every day.';
+  else if (s.type === 'weekday') what = [1, 2, 3, 4, 5].map((d) => `${WEEKDAY_NAMES[d].slice(0, 3)}: ${esc(s.days[d] || 'all')}`).join(', ') + '.';
+  else what = `${esc(s.labels[0])} and ${esc(s.labels[1])} days alternate.`;
+  const info = dayInfo(dateStr(new Date()));
+  const fix = s.type === 'rotation' && info && !info.off ? `
+    <p class="hint">Out of sync? Today shows as ${esc(info.label)}.
+      <button class="link-btn" data-action="fix-rotation">Today is actually ${esc(s.labels.find((l) => l !== info.label))}</button></p>` : '';
+  const stale = s.type === 'school' && schoolCal && dateStr(new Date()) > schoolCal.last ? `<p class="bad">This calendar is for ${esc(schoolCal.year)}. Holidays for this year aren't added yet, so only the weekly pattern is used.</p>` : '';
+  return `<p>${what}</p>${stale}${fix}
+    ${s.off?.length ? `<p class="hint">${s.off.length} day${s.off.length === 1 ? '' : 's'} marked as no school. Change them by clicking the day in the calendar.</p>` : ''}
+    <div class="row"><a class="btn" href="#/setup">Change schedule</a></div>`;
+}
+
 function renderSettings() {
   const iOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
   const installed = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
@@ -585,7 +887,7 @@ function renderSettings() {
   $('#main').innerHTML = `
     <div class="page-header"><h2>Settings</h2></div>
     <section class="card"><h3>Notifications</h3>${notif}</section>
-    <section class="card"><h3>Moodle</h3>${moodleCard}</section>
+    ${isOwn() ? `<section class="card"><h3>School schedule</h3>${scheduleCard()}</section>` : `<section class="card"><h3>Moodle</h3>${moodleCard}</section>`}
     <section class="card"><h3>Backup</h3>
       <div class="row">
         <button class="btn" data-action="export">Export backup</button>
@@ -594,13 +896,15 @@ function renderSettings() {
       <p class="hint">Import adds everything from a backup file to what's already here.</p>
     </section>
     ${ONLINE ? `<section class="card"><h3>Share with a friend</h3>
-      <p>Send a friend the link. They log in with their own Moodle key and only see their own homework.</p>
+      <p>Send a friend the link. VCS students log in with their Moodle key, and anyone else can log their own homework. Everyone only sees their own list.</p>
       <div class="row"><button class="btn" data-action="share">Share the link</button></div>
     </section>` : ''}
     ${ONLINE && me ? `<section class="card"><h3>Account</h3>
       <p>Logged in as <b>${esc(me.name)}</b>.</p>
       <div class="row"><button class="primary" data-action="link-device">Log in on another device</button></div>
       <div id="link-code"></div>
+      ${isOwn() && passkeysSupported() ? `<p class="hint">You have ${me.passkeys || 0} passkey${me.passkeys === 1 ? '' : 's'}. After logging in on a new device with a code, add a passkey there so you can log in on it directly.</p>
+      <div class="row"><button class="btn" data-action="add-passkey">Add a passkey on this device</button></div>` : ''}
       <div class="row">
         <button class="btn" data-action="logout">Log out</button>
         <button class="danger" data-action="delete-account">Delete my account</button>
@@ -760,7 +1064,10 @@ function openClassDialog(id) {
   $('#class-dialog-title').textContent = c ? 'Edit class' : 'New class';
   f.querySelector('[data-action="delete-class"]').hidden = !c;
   f.name.value = c ? c.name : '';
-  $('#class-day-row').hidden = !c?.moodleId;
+  const opts = classDayOptions();
+  $('#class-day-row').hidden = !opts.length || (!isOwn() && !c?.moodleId);
+  f.day.innerHTML = `<option value="">${isOwn() ? 'Every day' : 'Not set'}</option>`
+    + opts.map((o) => `<option value="${esc(o)}">${esc(isOwn() ? o : `${o} days`)}</option>`).join('');
   f.day.value = c?.day || '';
   const used = new Set(classes().map((x) => x.color));
   const color = c ? c.color : COLORS.find((x) => !used.has(x)) || COLORS[classes().length % COLORS.length];
@@ -781,10 +1088,12 @@ $('#class-dialog').addEventListener('close', () => {
         if (name !== c.name) c.renamed = true; // the sync won't touch names you chose
         touch(Object.assign(c, { name, color }));
         if (f.day.value && f.day.value !== c.day) setClassDay(c, f.day.value);
+        else if (isOwn() && !f.day.value && c.day) touch(Object.assign(c, { day: '', everyDay: true }));
         commit();
       } else {
         const id = uid();
-        state.classes.push(touch({ id, name, color }));
+        const day = isOwn() ? f.day.value : '';
+        state.classes.push(touch({ id, name, color, ...(isOwn() && classDayOptions().length ? { day, everyDay: !day } : {}) }));
         commit();
         location.hash = `#/class/${id}`;
       }
@@ -921,9 +1230,54 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'login-mode': loginMode = el.dataset.mode; render(); break;
+    case 'login-kind': loginKind = el.dataset.kind; loginMode = 'key'; safeSet('hw-login-kind', loginKind); render(); break;
+    case 'passkey-login': {
+      el.disabled = true;
+      try { await passkeyFlow('login'); await boot(true); }
+      catch (err) { $('#login-err').textContent = err.message; el.disabled = false; }
+      break;
+    }
+    case 'add-passkey': {
+      try { await passkeyFlow('add'); me.passkeys = (me.passkeys || 0) + 1; toast('Passkey added. You can log in with it on this device now.'); render(); }
+      catch (err) { toast(err.message); }
+      break;
+    }
+    case 'pick-school': {
+      try { await saveSchedule({ type: 'school', school: el.dataset.school, off: [] }); toast(`Using ${schoolCal?.name || 'that school'}'s calendar`); location.hash = '#/'; }
+      catch (err) { toast(err.message); }
+      break;
+    }
+    case 'setup-manual': setupMode = 'manual'; render(); break;
+    case 'setup-back': setupMode = null; render(); break;
+    case 'setup-skip': location.hash = '#/'; break;
+    case 'preset-oddeven': {
+      const f = el.closest('form');
+      f.type.value = 'weekday';
+      ['All', 'Odd', 'Even', 'Odd', 'Even'].forEach((v, i) => { f[`d${i + 1}`].value = v; });
+      break;
+    }
+    case 'cal-mark-off': {
+      const off = new Set(schedule.off || []);
+      off.has(calSel) ? off.delete(calSel) : off.add(calSel);
+      try { await saveSchedule({ ...schedule, off: [...off] }); render(); }
+      catch (err) { toast(err.message); }
+      break;
+    }
+    case 'fix-rotation': {
+      const info = dayInfo(dateStr(new Date()));
+      const now = schedule.labels.find((l) => l !== info.label);
+      try { await saveSchedule({ ...schedule, labels: [now, info.label], anchor: dateStr(new Date()) }); toast(`Today is ${now} now`); render(); }
+      catch (err) { toast(err.message); }
+      break;
+    }
     case 'set-day': {
       const c = classById(el.dataset.class);
-      if (c) { setClassDay(c, el.dataset.day); commit(); toast(`${c.name}: ${el.dataset.day} days`); }
+      if (c) {
+        if (el.dataset.day) setClassDay(c, el.dataset.day);
+        else touch(Object.assign(c, { day: '', everyDay: true }));
+        commit();
+        toast(el.dataset.day ? `${c.name}: ${el.dataset.day}` : `${c.name}: every day`);
+      }
       break;
     }
     case 'link-device': {
@@ -935,7 +1289,7 @@ document.addEventListener('click', async (e) => {
     }
     case 'share': {
       const url = location.origin;
-      const text = 'I use this to keep track of homework from Moodle. It sorts everything by due date and can remind you at 6pm what\'s due tomorrow. You log in with your Moodle key; the login page shows where to find it.';
+      const text = 'I use this to keep track of homework from Moodle. It sorts everything by due date, has a calendar, and can remind you at 6pm what\'s due tomorrow. VCS students can pull homework straight from Moodle, and anyone else can log their own.';
       try {
         if (navigator.share) await navigator.share({ title: 'Homework', text, url });
         else { await navigator.clipboard.writeText(`${text}\n${url}`); toast('Copied. Paste it to a friend.'); }
@@ -948,6 +1302,9 @@ document.addEventListener('click', async (e) => {
 });
 
 document.addEventListener('change', (e) => {
+  const qa = e.target.closest('.quick-add');
+  if (qa && e.target.name === 'classId' && !qa.due.dataset.touched) qa.due.value = nextMeeting(classById(e.target.value));
+  if (qa && e.target.name === 'due') qa.due.dataset.touched = '1';
   if (e.target.dataset.action === 'toggle') {
     const t = state.tasks.find((x) => x.id === e.target.closest('[data-id]').dataset.id);
     t.done = e.target.checked;
@@ -977,6 +1334,45 @@ document.addEventListener('submit', async (e) => {
       btn.disabled = false;
       btn.textContent = 'Log in';
     }
+    return;
+  }
+  if (f.dataset.form === 'signup') {
+    e.preventDefault();
+    const btn = f.querySelector('button.primary');
+    btn.disabled = true;
+    btn.textContent = 'Making your passkey…';
+    try {
+      await passkeyFlow('signup', { name: f.name.value });
+      justSignedUp = true;
+      await boot(true);
+    } catch (err) {
+      $('#login-err').textContent = err.message;
+      btn.disabled = false;
+      btn.textContent = 'Create account';
+    }
+    return;
+  }
+  if (f.dataset.form === 'setup') {
+    e.preventDefault();
+    const type = f.type.value;
+    let s;
+    if (type === 'daily') s = { type };
+    else if (type === 'weekday') {
+      s = { type, days: {} };
+      for (let d = 1; d <= 5; d++) s.days[d] = f[`d${d}`].value.trim();
+    } else if (type === 'rotation') {
+      const l = [f.l0.value.trim(), f.l1.value.trim()];
+      if (!l[0] || !l[1] || l[0] === l[1]) return toast('Give the two days different names.');
+      let anchor = dateStr(new Date());
+      while (isWeekend(anchor)) anchor = addDaysStr(anchor, 1);
+      s = { type, labels: f.now.value === '1' ? [l[1], l[0]] : l, anchor };
+    } else return toast('Pick how your schedule works.');
+    try {
+      await saveSchedule({ ...s, off: schedule?.type === type ? schedule.off : [] });
+      setupMode = null;
+      toast('Schedule saved');
+      location.hash = '#/';
+    } catch (err) { toast(err.message); }
     return;
   }
   if (f.dataset.form === 'moodle') {
@@ -1069,6 +1465,7 @@ function registerSW() {
   if (ONLINE && 'serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(console.warn);
 }
 
+let justSignedUp = false;
 async function boot(again = false) {
   if (!again) {
     window.addEventListener('hashchange', render);
@@ -1086,13 +1483,16 @@ async function boot(again = false) {
     authed = s.authed;
     me = s.user;
     school = s.school || null;
-    moodle = me ? { connected: true, name: me.name } : { connected: false };
+    schedule = s.schedule || null;
+    moodle = me?.kind === 'moodle' ? { connected: true, name: me.name } : { connected: false };
   } catch {
     return; // offline — keep showing the cached copy
   }
   if (!authed) { forgetDevice(); return; }
   if (userChanged(me.id)) state = loadLocal();
   if (location.search) history.replaceState(null, '', location.pathname + location.hash);
+  await loadSchoolCal();
+  if (isOwn() && !schedule && justSignedUp) { justSignedUp = false; location.hash = '#/setup'; }
   render();
   registerSW();
   await pull();

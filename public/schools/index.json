@@ -1,0 +1,6 @@
+{
+  "note": "Schools whose calendars are built in. Each file covers one school year and needs a new one every summer. VCS isn't here: VCS (Moodle) accounts use api/_schoolDays.json.",
+  "schools": [
+    { "id": "wilcox", "name": "Wilcox High School", "place": "Santa Clara, CA", "file": "wilcox.json" }
+  ]
+}

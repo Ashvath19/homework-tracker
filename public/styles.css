@@ -420,3 +420,43 @@ dialog.detail { width: min(560px, calc(100vw - 24px)); max-height: min(86vh, 900
 .cal-t small { color: var(--ink-3); font-size: 12px; }
 .cal-list li.done .cal-t { text-decoration: line-through; color: var(--ink-3); }
 .cal-none { margin: 0; font-size: 13px; color: var(--ink-3); }
+
+/* ---------- Log your own: login choice, schedule setup ---------- */
+.login-tabs { display: flex; margin: 0 0 18px; }
+.login-tabs button { flex: 1; }
+.login-or { display: flex; align-items: center; gap: 10px; margin: 18px 0; color: var(--ink-3); font-size: 13px; }
+.login-or::before, .login-or::after { content: ''; flex: 1; border-top: 1px solid var(--rule); }
+.login-form .btn { padding: 11px 14px; font-size: 15px; }
+
+.setup h3 { margin-top: 0; }
+.school-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin: 10px 0 14px; }
+.school-btn {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; cursor: pointer;
+  padding: 12px 14px; border: 1px solid var(--rule); border-radius: 10px; background: var(--sheet); color: var(--ink); font: inherit;
+}
+.school-btn:hover { border-color: var(--ink-3); }
+.school-btn.on { border-color: var(--pen); box-shadow: inset 0 0 0 1px var(--pen); }
+.school-btn small { color: var(--ink-3); font-size: 12.5px; }
+.setup .opt { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; cursor: pointer; }
+.setup .opt input { margin-top: 4px; }
+.setup .opt span { display: flex; flex-direction: column; gap: 2px; }
+.setup .opt small { color: var(--ink-2); font-size: 13px; }
+.setup .opt-more { display: none; margin: 0 0 8px 26px; padding: 12px 14px; border-left: 2px solid var(--rule); }
+.setup:has(input[value=weekday]:checked) .opt-more[data-for=weekday],
+.setup:has(input[value=rotation]:checked) .opt-more[data-for=rotation] { display: block; }
+.setup .opt-more label { display: inline-flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; }
+.setup .opt-more .row { gap: 10px; margin-bottom: 10px; }
+.setup .field.short { width: 110px; flex: none; }
+.wk-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-bottom: 8px; }
+.wk-grid input { width: 100%; padding: 7px 8px; border: 1px solid var(--rule); border-radius: 7px; background: var(--sheet); color: var(--ink); font: inherit; font-size: 14px; }
+.setup .opt-more select { padding: 6px 8px; border: 1px solid var(--rule); border-radius: 7px; background: var(--sheet); color: var(--ink); font: inherit; font-weight: 400; }
+.cal-note { margin: -2px 0 8px; font-size: 12.5px; color: var(--ink-2); }
+.cal-mark { margin-top: 10px; font-size: 13px; }
+.day-badge.wide { font-size: 26px; }
+.day-badge.day-reg { font-size: 32px; color: var(--ink-2); }
+.login-tabs button { color: var(--ink-2); }
+.login-tabs button[aria-selected=true] { background: var(--ink); color: var(--paper); }
+.cal-cell.today.off .cal-num { color: var(--ink); }
+a.btn { text-decoration: none; display: inline-block; color: var(--ink); }
+.cal-cell { gap: 2px; }
+.cal-letter { position: static; font-size: 8.5px; line-height: 1; letter-spacing: .02em; }

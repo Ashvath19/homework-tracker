@@ -16,6 +16,8 @@ export const K = {
   subs: (u) => `hw:u:${u}:subs`,             // push subscriptions (one per device)
   session: (s) => `hw:sess:${s}`,            // session id → { uid, fp }
   link: (c) => `hw:link:${c}`,               // 6-digit phone login code → user id
+  cred: (id) => `hw:cred:${id}`,             // passkey id → user id
+  pkTicket: (t) => `hw:pk:${t}`,             // passkey challenge, between the two steps (5 min)
 };
 export const TZ = process.env.TIMEZONE || 'America/Los_Angeles';
 export const COLORS = ['#e5484d', '#f76b15', '#e2a336', '#30a46c', '#12a594', '#0090ff', '#8e4ec6', '#d6409f'];
@@ -56,6 +58,8 @@ export async function saveProfile(uid, p) {
   await redis.set(K.profile(uid), p);
 }
 export async function deleteUser(uid) {
+  const p = await getProfile(uid);
+  for (const c of p?.passkeys || []) await redis.del(K.cred(c.id));
   await redis.del(K.profile(uid), K.state(uid), K.subs(uid));
   await redis.srem(K.users, uid);
 }
@@ -66,6 +70,8 @@ const SESSION_DAYS = 180;
 
 // fp = fingerprint of the Moodle key at login time. When you reset your key on Moodle and
 // log in with the new one, every session made with the old key stops working.
+// "Log your own" accounts have no Moodle key, so they get a random fp instead.
+export const sessionFp = (profile) => profile?.moodle?.fp || profile?.own?.fp || null;
 export const fingerprint = (token) => crypto.createHash('sha256').update(token).digest('hex').slice(0, 20);
 
 export async function startSession(res, uid, fp) {
@@ -84,7 +90,7 @@ export async function currentUser(req) {
   const sess = await redis.get(K.session(sid));
   if (!sess?.uid) return null;
   const profile = await getProfile(sess.uid);
-  if (!profile?.moodle || profile.moodle.fp !== sess.fp) return null; // key was replaced, or account deleted
+  if (!sessionFp(profile) || sessionFp(profile) !== sess.fp) return null; // key was replaced, or account deleted
   return sess.uid;
 }
 

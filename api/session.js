@@ -11,9 +11,11 @@ export default async function handler(req, res) {
     const p = uid ? await getProfile(uid) : null;
     return res.json({
       authed: !!p,
-      user: p ? { id: uid, name: p.name } : null,
+      user: p ? { id: uid, name: p.name, kind: p.moodle ? 'moodle' : 'own', passkeys: (p.passkeys || []).length } : null,
       vapidPublicKey: process.env.VAPID_PUBLIC_KEY || null,
-      school: schoolDays(),
+      // VCS's A/B calendar is only for VCS (Moodle) accounts. "Log your own" accounts use their own schedule.
+      school: !p || p.moodle ? schoolDays() : null,
+      schedule: p && !p.moodle ? p.schedule || null : null,
     });
   }
   if (req.method === 'DELETE') {

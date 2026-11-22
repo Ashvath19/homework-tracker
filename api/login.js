@@ -1,13 +1,17 @@
 // POST /api/login { token } → log in (or sign up) with your Moodle key
 // POST /api/login { code }  → log in with a 6-digit code from a device you're already logged in on
-import { redis, K, getProfile, saveProfile, startSession, encrypt, decrypt, fingerprint, tooManyFailures } from './_lib.js';
+// POST /api/login { passkey: 'signup-start' | 'signup-finish' | 'login-start' | 'login-finish' |
+//                   'add-start' | 'add-finish', ... } → "log your own" accounts (see _passkey.js)
+import { redis, K, getProfile, saveProfile, startSession, encrypt, decrypt, fingerprint, tooManyFailures, sessionFp } from './_lib.js';
+import { handlePasskey } from './_passkey.js';
 import { ws, MOODLE_BASE } from './_moodle.js';
 import { syncUser } from './sync.js';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).end();
-  const { token, code } = req.body || {};
+  const { token, code, passkey } = req.body || {};
+  if (passkey) return handlePasskey(req, res, String(passkey));
 
   if (code != null) {
     const limit = await tooManyFailures(req, 'code', 10);
@@ -15,11 +19,11 @@ export default async function handler(req, res) {
     const clean = String(code).replace(/\D/g, '');
     const uid = clean.length === 6 ? await redis.getdel(K.link(clean)) : null; // codes work once
     const profile = uid ? await getProfile(uid) : null;
-    if (!profile?.moodle) {
+    if (!sessionFp(profile)) {
       await limit.record();
       return res.status(400).json({ error: "That code didn't work. Codes expire after 10 minutes and only work once." });
     }
-    await startSession(res, uid, profile.moodle.fp);
+    await startSession(res, uid, sessionFp(profile));
     return res.json({ ok: true });
   }
 
