@@ -154,6 +154,29 @@ async function loadSchoolCal() {
 function addDaysStr(ds, n) { const d = parseDate(ds); d.setDate(d.getDate() + n); return dateStr(d); }
 const isWeekend = (ds) => { const w = parseDate(ds).getDay(); return w === 0 || w === 6; };
 
+// A pattern's label for a school day. skip(d) says whether a day doesn't count (weekend, day off, special day).
+function patternLabel(p, ds, skip) {
+  if (!p) return null;
+  if (p.type === 'daily') return { label: '' };
+  if (p.type === 'weekday') return { label: p.days?.[parseDate(ds).getDay()] || '' };
+  if (p.type === 'rotation') {
+    if (!p.anchor) return null;
+    // count the school days from the anchor (which is labels[0])
+    let n = 0;
+    if (ds > p.anchor) { for (let d = addDaysStr(p.anchor, 1); d <= ds; d = addDaysStr(d, 1)) if (!skip(d)) n++; }
+    else if (ds < p.anchor) { for (let d = addDaysStr(p.anchor, -1); d >= ds; d = addDaysStr(d, -1)) if (!skip(d)) n--; }
+    return { label: p.labels[((n % 2) + 2) % 2] };
+  }
+  return null;
+}
+// The weekly pattern in use: the student's own, or the built-in school's.
+function activePattern() {
+  const s = schedule;
+  if (!s) return null;
+  if (s.type !== 'school') return s;
+  return s.pattern || (schoolCal?.pattern?.type === 'rotation' && !schoolCal.pattern.anchor ? null : schoolCal?.pattern) || null;
+}
+
 // What kind of school day a date is: { off: true } for no school, { label, note } for a school day
 // (label '' means a regular day when every class meets), or null when we don't know.
 function dayInfo(ds) {
@@ -165,32 +188,22 @@ function dayInfo(ds) {
   const s = schedule;
   if (!s) return null;
   if (isWeekend(ds) || s.off?.includes(ds)) return { off: true };
-  if (s.type === 'daily') return { label: '' };
-  if (s.type === 'weekday') return { label: s.days?.[parseDate(ds).getDay()] || '' };
-  if (s.type === 'rotation') {
-    // count school days from the anchor (which is labels[0]), skipping weekends and days off
-    let n = 0;
-    const step = ds >= s.anchor ? 1 : -1;
-    for (let d = s.anchor; d !== ds; d = addDaysStr(d, step)) {
-      const next = addDaysStr(d, step);
-      if (!isWeekend(step > 0 ? next : d) && !s.off?.includes(step > 0 ? next : d)) n += step;
-    }
-    return { label: s.labels[((n % 2) + 2) % 2] };
-  }
-  if (s.type === 'school') {
-    const f = schoolCal;
-    if (!f) return null;
-    if (ds < f.first) return { off: true };
-    if (ds > f.last) {
-      // summer break, then (until next year's calendar is added) just the weekly pattern
-      if (ds < `${f.last.slice(0, 4)}-08-01`) return { off: true };
-      return { label: f.pattern.days[parseDate(ds).getDay()] || '', unsure: true };
-    }
+  if (s.type !== 'school') return patternLabel(s, ds, (d) => isWeekend(d) || s.off?.includes(d));
+  const f = schoolCal;
+  if (!f) return null;
+  if (ds < f.first) return { off: true };
+  let unsure = false;
+  if (ds > f.last) {
+    // summer break, then (until next year's calendar is added) just the weekly pattern
+    if (ds < `${f.last.slice(0, 4)}-08-01`) return { off: true };
+    unsure = true;
+  } else {
     if (f.off.includes(ds)) return { off: true };
-    if (f.special?.[ds]) return { label: f.special[ds].label, note: f.special[ds].note };
-    return { label: f.pattern.days[parseDate(ds).getDay()] || '' };
+    if (f.special?.[ds]) return { ...f.special[ds] };
   }
-  return null;
+  const info = patternLabel(activePattern(), ds,
+    (d) => isWeekend(d) || s.off?.includes(d) || f.off.includes(d) || !!f.special?.[d]);
+  return info && { ...info, unsure };
 }
 
 // The day choices a class can have ("A"/"B", "Odd"/"Even", ...). Empty when classes meet every day.
@@ -198,9 +211,10 @@ function classDayOptions() {
   if (!isOwn()) return school ? ['A', 'B'] : [];
   const s = schedule;
   if (!s) return [];
-  if (s.type === 'school') return schoolCal?.classDays || [];
-  if (s.type === 'rotation') return [...s.labels];
-  if (s.type === 'weekday') return [...new Set(Object.values(s.days || {}).filter((l) => l && l !== 'All'))];
+  if (s.type === 'school' && schoolCal?.classDays?.length) return schoolCal.classDays;
+  const p = activePattern();
+  if (p?.type === 'rotation') return [...p.labels];
+  if (p?.type === 'weekday') return [...new Set(Object.values(p.days || {}).filter((l) => l && l !== 'All'))];
   return [];
 }
 // Does this class meet on that day?
@@ -225,8 +239,8 @@ function nextMeeting(c) {
 function dayName(info, long) {
   if (!info || info.off || !info.label) return '';
   if (!isOwn()) return long ? `${info.label} day` : info.label;
-  const names = schoolCal?.labelNames || {};
-  return long ? (names[info.label] || `${info.label} day`) : info.label;
+  const names = (schedule?.type === 'school' && schoolCal?.labelNames) || {};
+  return long ? (names[info.label] || `${info.label} day`) : (schoolCal?.short?.[info.label] || info.label);
 }
 
 // ---------- passkeys (browser side) ----------
@@ -285,14 +299,30 @@ async function saveSchedule(s) {
 }
 
 // ---------- schedule setup page (#/setup), "log your own" accounts ----------
-let setupMode = null; // null (ask school) | 'manual'
+let setupMode = null;   // null (ask school) | 'manual' (own pattern) | 'today' (which rotation day is today)
+let setupSchool = null; // the school file picked, when it still needs the student's pattern or today's day
 function renderSetup() {
   const sch = schoolList?.schools || [];
   const today = dateStr(new Date());
   let nextSchoolDay = today;
   while (isWeekend(nextSchoolDay)) nextSchoolDay = addDaysStr(nextSchoolDay, 1);
   const whenWord = nextSchoolDay === today ? 'Today' : `${WEEKDAY_NAMES[parseDate(nextSchoolDay).getDay()]}`;
-  const cur = schedule || {};
+  const cur = setupSchool ? (schedule?.pattern || {}) : (schedule || {});
+  if (setupMode === 'today' && setupSchool) {
+    let d = today;
+    while (isWeekend(d) || setupSchool.off.includes(d) || setupSchool.special?.[d] || d < setupSchool.first) d = addDaysStr(d, 1);
+    const when = d === today ? 'today' : parseDate(d).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+    $('#main').innerHTML = `
+      <div class="page-header"><h2>${esc(setupSchool.name)}</h2></div>
+      <p class="subtitle">Holidays and finals are built in. One question so the days line up:</p>
+      <section class="card setup">
+        <h3>Is ${when} a ${setupSchool.pattern.labels.map(esc).join(' or ')} day?</h3>
+        <div class="row">${setupSchool.pattern.labels.map((l, i) => `<button class="btn" data-action="pick-today" data-i="${i}" data-date="${d}">${esc(l)}</button>`).join('')}</div>
+        <p class="hint">If it ever gets out of sync, you can fix it in Settings.</p>
+        <button class="link-btn" data-action="setup-back">Back to the school list</button>
+      </section>`;
+    return;
+  }
   const days = cur.type === 'weekday' ? cur.days : { 1: '', 2: '', 3: '', 4: '', 5: '' };
   const labels = cur.type === 'rotation' ? cur.labels : ['A', 'B'];
 
@@ -302,14 +332,16 @@ function renderSetup() {
     ${setupMode !== 'manual' ? `
       <section class="card setup">
         <h3>What school do you go to?</h3>
+        ${sch.length > 6 ? `<input class="field school-search" type="search" placeholder="Search for your school" aria-label="Search schools" autocomplete="off">` : ''}
         ${sch.length ? `<div class="school-pick">${sch.map((s) => `
           <button class="school-btn ${cur.type === 'school' && cur.school === s.id ? 'on' : ''}" data-action="pick-school" data-school="${s.id}">
             <b>${esc(s.name)}</b><small>${esc(s.place || '')}</small></button>`).join('')}</div>` : '<p class="hint">Loading schools…</p>'}
-        <p class="hint">Only a few schools are built in so far. Not on the list? Set yours up yourself: it takes a minute.</p>
+        <p class="hint">Schools near San Jose are built in so far. Not on the list? Set yours up yourself: it takes a minute.</p>
         <div class="row"><button class="btn" data-action="setup-manual">My school isn't listed</button></div>
       </section>` : `
       <form class="card setup" data-form="setup">
-        <h3>How does your schedule work?</h3>
+        ${setupSchool ? `<p>${esc(setupSchool.name)}'s holidays and breaks are built in, but not its weekly schedule yet.</p>` : ''}
+        <h3>How does your ${setupSchool ? 'week' : 'schedule'} work?</h3>
         <label class="opt"><input type="radio" name="type" value="daily" ${cur.type === 'daily' ? 'checked' : ''}>
           <span><b>Every class, every day</b><small>A normal schedule with no rotation.</small></span></label>
         <label class="opt"><input type="radio" name="type" value="weekday" ${cur.type === 'weekday' ? 'checked' : ''}>
@@ -543,7 +575,7 @@ function renderLogin() {
 
 function loginTabs() {
   return `<div class="seg login-tabs" role="tablist">
-    <button role="tab" aria-selected="${loginKind === 'vcs'}" data-action="login-kind" data-kind="vcs">VCS (Moodle)</button>
+    <button role="tab" aria-selected="${loginKind === 'vcs'}" data-action="login-kind" data-kind="vcs">Moodle</button>
     <button role="tab" aria-selected="${loginKind === 'own'}" data-action="login-kind" data-kind="own">Log your own</button>
   </div>`;
 }
@@ -834,14 +866,17 @@ function scheduleCard() {
   const s = schedule;
   if (!s) return `<p>Not set up yet.</p><div class="row"><a class="btn" href="#/setup">Set up schedule</a></div>`;
   let what;
-  if (s.type === 'school') what = `${esc(schoolCal?.name || s.school)}'s ${esc(schoolCal?.year || '')} calendar, with its holidays built in.`;
+  if (s.type === 'school') what = `${esc(schoolCal?.name || s.school)}'s ${esc(schoolCal?.year || '')} calendar, with its holidays built in.`
+    + (s.pattern?.type === 'weekday' ? ` Your week: ${[1, 2, 3, 4, 5].map((d) => `${WEEKDAY_NAMES[d].slice(0, 3)} ${esc(s.pattern.days[d] || 'all')}`).join(', ')}.` : '')
+    + (s.pattern?.type === 'daily' ? ' Every class meets every day.' : '');
   else if (s.type === 'daily') what = 'Every class meets every day.';
   else if (s.type === 'weekday') what = [1, 2, 3, 4, 5].map((d) => `${WEEKDAY_NAMES[d].slice(0, 3)}: ${esc(s.days[d] || 'all')}`).join(', ') + '.';
   else what = `${esc(s.labels[0])} and ${esc(s.labels[1])} days alternate.`;
   const info = dayInfo(dateStr(new Date()));
-  const fix = s.type === 'rotation' && info && !info.off ? `
+  const rot = activePattern()?.type === 'rotation' ? activePattern() : null;
+  const fix = rot && info && !info.off && rot.labels.includes(info.label) ? `
     <p class="hint">Out of sync? Today shows as ${esc(info.label)}.
-      <button class="link-btn" data-action="fix-rotation">Today is actually ${esc(s.labels.find((l) => l !== info.label))}</button></p>` : '';
+      <button class="link-btn" data-action="fix-rotation">Today is actually ${esc(rot.labels.find((l) => l !== info.label))}</button></p>` : '';
   const stale = s.type === 'school' && schoolCal && dateStr(new Date()) > schoolCal.last ? `<p class="bad">This calendar is for ${esc(schoolCal.year)}. Holidays for this year aren't added yet, so only the weekly pattern is used.</p>` : '';
   return `<p>${what}</p>${stale}${fix}
     ${s.off?.length ? `<p class="hint">${s.off.length} day${s.off.length === 1 ? '' : 's'} marked as no school. Change them by clicking the day in the calendar.</p>` : ''}
@@ -1243,12 +1278,34 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'pick-school': {
-      try { await saveSchedule({ type: 'school', school: el.dataset.school, off: [] }); toast(`Using ${schoolCal?.name || 'that school'}'s calendar`); location.hash = '#/'; }
-      catch (err) { toast(err.message); }
+      try {
+        const id = el.dataset.school;
+        const f = await (await fetch(`/schools/${id}.json`)).json();
+        if (!f.pattern || (f.pattern.type === 'rotation' && !f.pattern.anchor)) {
+          setupSchool = f;
+          setupMode = f.pattern ? 'today' : 'manual';
+          render();
+          break;
+        }
+        await saveSchedule({ type: 'school', school: id, off: [] });
+        toast(`Using ${schoolCal?.name || 'that school'}'s calendar`);
+        location.hash = '#/';
+      } catch (err) { toast(err.message); }
       break;
     }
-    case 'setup-manual': setupMode = 'manual'; render(); break;
-    case 'setup-back': setupMode = null; render(); break;
+    case 'pick-today': {
+      const labels = setupSchool.pattern.labels;
+      const i = Number(el.dataset.i);
+      try {
+        await saveSchedule({ type: 'school', school: setupSchool.id, off: [], pattern: { type: 'rotation', labels: [labels[i], labels[1 - i]], anchor: el.dataset.date } });
+        toast(`Using ${setupSchool.name}'s calendar`);
+        setupSchool = null; setupMode = null;
+        location.hash = '#/';
+      } catch (err) { toast(err.message); }
+      break;
+    }
+    case 'setup-manual': setupMode = 'manual'; setupSchool = null; render(); break;
+    case 'setup-back': setupMode = null; setupSchool = null; render(); break;
     case 'setup-skip': location.hash = '#/'; break;
     case 'preset-oddeven': {
       const f = el.closest('form');
@@ -1265,8 +1322,10 @@ document.addEventListener('click', async (e) => {
     }
     case 'fix-rotation': {
       const info = dayInfo(dateStr(new Date()));
-      const now = schedule.labels.find((l) => l !== info.label);
-      try { await saveSchedule({ ...schedule, labels: [now, info.label], anchor: dateStr(new Date()) }); toast(`Today is ${now} now`); render(); }
+      const rot = activePattern();
+      const now = rot.labels.find((l) => l !== info.label);
+      const fixed = { type: 'rotation', labels: [now, info.label], anchor: dateStr(new Date()) };
+      try { await saveSchedule(schedule.type === 'school' ? { ...schedule, pattern: fixed } : { ...schedule, ...fixed }); toast(`Today is ${now} now`); render(); }
       catch (err) { toast(err.message); }
       break;
     }
@@ -1299,6 +1358,12 @@ document.addEventListener('click', async (e) => {
       break;
     }
   }
+});
+
+document.addEventListener('input', (e) => {
+  if (!e.target.matches('.school-search')) return;
+  const q = e.target.value.trim().toLowerCase();
+  document.querySelectorAll('.school-btn').forEach((b) => { b.hidden = !!q && !b.textContent.toLowerCase().includes(q); });
 });
 
 document.addEventListener('change', (e) => {
@@ -1368,8 +1433,9 @@ document.addEventListener('submit', async (e) => {
       s = { type, labels: f.now.value === '1' ? [l[1], l[0]] : l, anchor };
     } else return toast('Pick how your schedule works.');
     try {
-      await saveSchedule({ ...s, off: schedule?.type === type ? schedule.off : [] });
-      setupMode = null;
+      if (setupSchool) await saveSchedule({ type: 'school', school: setupSchool.id, off: [], pattern: s });
+      else await saveSchedule({ ...s, off: schedule?.type === type ? schedule.off : [] });
+      setupMode = null; setupSchool = null;
       toast('Schedule saved');
       location.hash = '#/';
     } catch (err) { toast(err.message); }

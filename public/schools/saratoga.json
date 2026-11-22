@@ -1,0 +1,96 @@
+{
+ "id": "saratoga",
+ "name": "Saratoga High School",
+ "place": "Saratoga",
+ "year": "2026-27",
+ "first": "2026-08-12",
+ "last": "2027-06-03",
+ "sources": [
+  "https://www.saratogahigh.org/about-us/calendars-and-schedules",
+  "https://www.lgsuhsd.org/resources/calendars-schedules"
+ ],
+ "pattern": {
+  "type": "rotation",
+  "labels": [
+   "Red",
+   "Blue"
+  ]
+ },
+ "off": [
+  "2026-09-07",
+  "2026-10-12",
+  "2026-11-11",
+  "2026-11-23",
+  "2026-11-24",
+  "2026-11-25",
+  "2026-11-26",
+  "2026-11-27",
+  "2026-12-18",
+  "2026-12-21",
+  "2026-12-22",
+  "2026-12-23",
+  "2026-12-24",
+  "2026-12-25",
+  "2026-12-28",
+  "2026-12-29",
+  "2026-12-30",
+  "2026-12-31",
+  "2027-01-01",
+  "2027-01-18",
+  "2027-02-15",
+  "2027-02-16",
+  "2027-02-17",
+  "2027-02-18",
+  "2027-02-19",
+  "2027-03-08",
+  "2027-04-05",
+  "2027-04-06",
+  "2027-04-07",
+  "2027-04-08",
+  "2027-04-09",
+  "2027-05-31"
+ ],
+ "classDays": [
+  "Red",
+  "Blue"
+ ],
+ "labelNames": {
+  "Red": "Red day",
+  "Blue": "Blue day"
+ },
+ "special": {
+  "2026-12-14": {
+   "label": "All",
+   "note": "Finals week: all periods, short"
+  },
+  "2026-12-15": {
+   "label": "Finals",
+   "note": "Finals"
+  },
+  "2026-12-16": {
+   "label": "Finals",
+   "note": "Finals"
+  },
+  "2026-12-17": {
+   "label": "Finals",
+   "note": "Finals"
+  },
+  "2027-05-28": {
+   "label": "All",
+   "note": "Finals week: all periods, short"
+  },
+  "2027-06-01": {
+   "label": "Finals",
+   "note": "Finals"
+  },
+  "2027-06-02": {
+   "label": "Finals",
+   "note": "Finals"
+  },
+  "2027-06-03": {
+   "label": "Finals",
+   "note": "Finals"
+  }
+ },
+ "short": {}
+}

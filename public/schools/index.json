@@ -1,6 +1,185 @@
 {
-  "note": "Schools whose calendars are built in. Each file covers one school year and needs a new one every summer. VCS isn't here: VCS (Moodle) accounts use api/_schoolDays.json.",
-  "schools": [
-    { "id": "wilcox", "name": "Wilcox High School", "place": "Santa Clara, CA", "file": "wilcox.json" }
-  ]
+ "note": "Built by scripts/build-schools.py. One school year per file; rebuild every summer. VCS uses api/_schoolDays.json instead.",
+ "schools": [
+  {
+   "id": "andrew-hill",
+   "name": "Andrew Hill High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "mitty",
+   "name": "Archbishop Mitty High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "bellarmine",
+   "name": "Bellarmine College Prep",
+   "place": "San Jose",
+   "needs": null
+  },
+  {
+   "id": "cupertino",
+   "name": "Cupertino High School",
+   "place": "Cupertino",
+   "needs": null
+  },
+  {
+   "id": "evergreen-valley",
+   "name": "Evergreen Valley High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "fremont",
+   "name": "Fremont High School",
+   "place": "Sunnyvale",
+   "needs": null
+  },
+  {
+   "id": "gunderson",
+   "name": "Gunderson High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "gunn",
+   "name": "Gunn High School",
+   "place": "Palo Alto",
+   "needs": null
+  },
+  {
+   "id": "homestead",
+   "name": "Homestead High School",
+   "place": "Cupertino",
+   "needs": null
+  },
+  {
+   "id": "independence",
+   "name": "Independence High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "james-lick",
+   "name": "James Lick High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "leland",
+   "name": "Leland High School",
+   "place": "San Jose",
+   "needs": null
+  },
+  {
+   "id": "lincoln",
+   "name": "Lincoln High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "los-gatos",
+   "name": "Los Gatos High School",
+   "place": "Los Gatos",
+   "needs": null
+  },
+  {
+   "id": "lynbrook",
+   "name": "Lynbrook High School",
+   "place": "San Jose",
+   "needs": null
+  },
+  {
+   "id": "monta-vista",
+   "name": "Monta Vista High School",
+   "place": "Cupertino",
+   "needs": null
+  },
+  {
+   "id": "mount-pleasant",
+   "name": "Mount Pleasant High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "oak-grove",
+   "name": "Oak Grove High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "palo-alto-high",
+   "name": "Palo Alto High School",
+   "place": "Palo Alto",
+   "needs": null
+  },
+  {
+   "id": "piedmont-hills",
+   "name": "Piedmont Hills High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "pioneer",
+   "name": "Pioneer High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "san-jose-high",
+   "name": "San Jos\u00e9 High School",
+   "place": "San Jose",
+   "needs": null
+  },
+  {
+   "id": "santa-clara-high",
+   "name": "Santa Clara High School",
+   "place": "Santa Clara",
+   "needs": null
+  },
+  {
+   "id": "santa-teresa",
+   "name": "Santa Teresa High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "saratoga",
+   "name": "Saratoga High School",
+   "place": "Saratoga",
+   "needs": "today"
+  },
+  {
+   "id": "silver-creek",
+   "name": "Silver Creek High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "overfelt",
+   "name": "W.C. Overfelt High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "wilcox",
+   "name": "Wilcox High School",
+   "place": "Santa Clara",
+   "needs": null
+  },
+  {
+   "id": "willow-glen",
+   "name": "Willow Glen High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "yerba-buena",
+   "name": "Yerba Buena High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  }
+ ]
 }

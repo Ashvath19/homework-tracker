@@ -460,3 +460,5 @@ dialog.detail { width: min(560px, calc(100vw - 24px)); max-height: min(86vh, 900
 a.btn { text-decoration: none; display: inline-block; color: var(--ink); }
 .cal-cell { gap: 2px; }
 .cal-letter { position: static; font-size: 8.5px; line-height: 1; letter-spacing: .02em; }
+.school-search { width: 100%; max-width: 420px; margin-top: 6px; }
+.school-btn[hidden] { display: none; }

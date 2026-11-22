@@ -1,0 +1,133 @@
+{
+ "id": "leland",
+ "name": "Leland High School",
+ "place": "San Jose",
+ "year": "2026-27",
+ "first": "2026-08-06",
+ "last": "2027-05-27",
+ "sources": [
+  "https://leland.sjusd.org/about/bell-schedule",
+  "https://www.sjusd.org/calendar"
+ ],
+ "pattern": {
+  "type": "weekday",
+  "days": {
+   "1": "All",
+   "2": "Gold",
+   "3": "Blue",
+   "4": "Gold",
+   "5": "Blue"
+  }
+ },
+ "off": [
+  "2026-09-07",
+  "2026-09-28",
+  "2026-09-29",
+  "2026-09-30",
+  "2026-10-01",
+  "2026-10-02",
+  "2026-11-11",
+  "2026-11-25",
+  "2026-11-26",
+  "2026-11-27",
+  "2026-12-21",
+  "2026-12-22",
+  "2026-12-23",
+  "2026-12-24",
+  "2026-12-25",
+  "2026-12-28",
+  "2026-12-29",
+  "2026-12-30",
+  "2026-12-31",
+  "2027-01-01",
+  "2027-01-18",
+  "2027-02-15",
+  "2027-02-16",
+  "2027-02-17",
+  "2027-02-18",
+  "2027-02-19",
+  "2027-04-05",
+  "2027-04-06",
+  "2027-04-07",
+  "2027-04-08",
+  "2027-04-09"
+ ],
+ "classDays": [
+  "Gold",
+  "Blue"
+ ],
+ "short": {
+  "Gold": "Gld"
+ },
+ "labelNames": {
+  "All": "All periods",
+  "Gold": "Gold day (1, 3, 5)",
+  "Blue": "Blue day (2, 4, 6)"
+ },
+ "special": {
+  "2026-08-06": {
+   "label": "All",
+   "note": "All periods"
+  },
+  "2026-08-07": {
+   "label": "All",
+   "note": "All periods"
+  },
+  "2026-12-14": {
+   "label": "All",
+   "note": "All periods"
+  },
+  "2026-12-15": {
+   "label": "All",
+   "note": "All periods"
+  },
+  "2027-05-24": {
+   "label": "All",
+   "note": "All periods"
+  },
+  "2026-08-17": {
+   "label": "Blue",
+   "note": "Blue Monday (2, 4, 6)"
+  },
+  "2026-10-12": {
+   "label": "Blue",
+   "note": "Blue Monday (2, 4, 6)"
+  },
+  "2026-11-09": {
+   "label": "Blue",
+   "note": "Blue Monday (2, 4, 6)"
+  },
+  "2026-11-23": {
+   "label": "Blue",
+   "note": "Blue Monday (2, 4, 6)"
+  },
+  "2027-04-26": {
+   "label": "Blue",
+   "note": "Blue Monday (2, 4, 6)"
+  },
+  "2026-12-16": {
+   "label": "Finals",
+   "note": "Finals"
+  },
+  "2026-12-17": {
+   "label": "Finals",
+   "note": "Finals"
+  },
+  "2026-12-18": {
+   "label": "Finals",
+   "note": "Finals"
+  },
+  "2027-05-25": {
+   "label": "Finals",
+   "note": "Finals"
+  },
+  "2027-05-26": {
+   "label": "Finals",
+   "note": "Finals"
+  },
+  "2027-05-27": {
+   "label": "Finals",
+   "note": "Finals"
+  }
+ }
+}

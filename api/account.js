@@ -36,22 +36,27 @@ const label = (x) => String(x ?? '').replace(/\s+/g, ' ').trim().slice(0, 12);
 function cleanSchedule(s) {
   if (!s || typeof s !== 'object') return null;
   const off = Array.isArray(s.off) ? [...new Set(s.off.filter((d) => DATE.test(d)))].sort().slice(-300) : [];
-  const on = Array.isArray(s.on) ? [...new Set(s.on.filter((d) => DATE.test(d)))].sort().slice(-300) : [];
-  const base = { off, on };
-  if (s.type === 'daily') return { type: 'daily', ...base };
   if (s.type === 'school') {
     if (!/^[a-z0-9-]{1,40}$/.test(s.school || '')) return null;
-    return { type: 'school', school: s.school, ...base };
+    // the student's own pattern, for schools whose weekly pattern isn't built in (or to say which rotation day today is)
+    const pattern = s.pattern ? cleanPattern(s.pattern) : null;
+    if (s.pattern && !pattern) return null;
+    return { type: 'school', school: s.school, off, ...(pattern ? { pattern } : {}) };
   }
+  const p = cleanPattern(s);
+  return p && { ...p, off };
+}
+function cleanPattern(s) {
+  if (s.type === 'daily') return { type: 'daily' };
   if (s.type === 'weekday') {
     const days = {};
     for (const d of ['1', '2', '3', '4', '5']) days[d] = label(s.days?.[d]);
-    return { type: 'weekday', days, ...base };
+    return { type: 'weekday', days };
   }
   if (s.type === 'rotation') {
     const labels = (Array.isArray(s.labels) ? s.labels : []).map(label).filter(Boolean).slice(0, 2);
     if (labels.length !== 2 || labels[0] === labels[1] || !DATE.test(s.anchor || '')) return null;
-    return { type: 'rotation', labels, anchor: s.anchor, ...base };
+    return { type: 'rotation', labels, anchor: s.anchor };
   }
   return null;
 }
