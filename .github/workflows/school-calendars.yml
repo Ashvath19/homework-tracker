@@ -1,0 +1,44 @@
+name: School calendar check
+
+# Once a week, checks whether any school changed the calendar or bell schedule its built-in
+# school file came from. If one did, it opens an issue (or comments on the open one) saying which.
+# It never changes the site itself: update scripts/build-schools.py by hand, rebuild, and deploy.
+on:
+  schedule:
+    - cron: '0 16 * * 1' # Mondays, 8 or 9am California time
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check the school pages
+        id: watch
+        run: node scripts/watch-schools.mjs
+      - name: Open or update the alert issue
+        if: steps.watch.outputs.alert == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create school-calendar --color f08a24 --description "A school changed its calendar" 2>/dev/null || true
+          open=$(gh issue list --label school-calendar --state open --json number --jq '.[0].number')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body-file school-watch-report.md
+          else
+            gh issue create --title "A school calendar changed" --label school-calendar --body-file school-watch-report.md
+          fi
+      - name: Save what was seen
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/school-watch-state.json
+          git diff --cached --quiet || (git commit -m "Record this week's school calendar check" && git push)
