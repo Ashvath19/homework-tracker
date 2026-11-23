@@ -1170,6 +1170,16 @@ async function photoToDataUrl(file) {
   } finally { URL.revokeObjectURL(url); }
 }
 
+// The sync bookmark: public/sgy-sync.js, pointed at this site, as a javascript: address.
+let sgyBookmarkCache = null;
+async function sgyBookmark() {
+  if (!sgyBookmarkCache) {
+    const code = (await (await fetch('/sgy-sync.js', { cache: 'no-store' })).text()).replace('__SITE__', location.origin);
+    sgyBookmarkCache = `javascript:${encodeURIComponent(code)}`;
+  }
+  return sgyBookmarkCache;
+}
+
 function feedCard() {
   const form = (label, placeholder) => `<form class="row" data-form="feed">
       <input name="feed" placeholder="${placeholder}" autocomplete="off" spellcheck="false" required class="field">
@@ -1191,7 +1201,20 @@ function feedCard() {
       <button class="link-btn" data-action="feed-off">Disconnect</button>
     </div>
     <p class="hint">${name} doesn't share what you've turned in, so check things off yourself.${feed.kind === 'schoology' ? ' Anything past its due date stays here as overdue until you do, even if Schoology forgets to list it as missing.' : ''}</p>
-    ${feed.kind === 'schoology' ? `<h4 class="sub">Class calendars</h4>
+    ${feed.kind === 'schoology' ? `<h4 class="sub">Sort into classes automatically</h4>
+      <p class="hint">${feed.synced ? `Last synced ${ago(feed.synced.at)}: ${feed.synced.classes} classes, ${feed.synced.ids} assignments. Tap the bookmark again whenever new homework lands in “To sort”.` : 'A bookmark you tap while on Schoology. It reads which assignments are in which of your classes and sends just that here, so homework gets sorted with your real class names. It never sees your password.'}</p>
+      <ol class="hint">
+        <li>Press <b>Copy bookmark code</b>.</li>
+        <li>Bookmark any page (on iPhone or iPad: Share, then Add Bookmark), name it <b>Sync Homework</b>, and save.</li>
+        <li>Edit that bookmark and replace its address with the copied code.</li>
+        <li>Open Schoology, then tap the <b>Sync Homework</b> bookmark. It takes a few seconds and brings you back here.</li>
+      </ol>
+      <div class="row">
+        <button class="btn" data-action="sgy-bookmark-copy">Copy bookmark code</button>
+        <a class="btn sgy-bookmark" href="#" data-action="sgy-bookmark-drag" title="On a computer, drag this to your bookmarks bar">Sync Homework</a>
+      </div>
+      <p class="hint">On a computer you can also drag the <b>Sync Homework</b> button to your bookmarks bar.</p>
+      <h4 class="sub">Class calendars</h4>
       <p class="hint">Schoology's main calendar doesn't say which class anything is for, but each class has its own calendar. In Schoology, open <b>Calendar</b>, pick one class's calendar, use its <b>Export</b>, and copy the link ending in <b>.ics</b>. Add each class once and homework gets sorted into it.</p>
       ${(feed.classes || []).length ? `<ul class="sgy-classes">${feed.classes.map((c) => `<li><span>${esc(c.name)}</span><button class="link-btn" data-action="sgy-class-remove" data-key="${esc(c.key)}">Remove</button></li>`).join('')}</ul>` : ''}
       ${(feed.classes || []).length < 15 ? `<form class="row" data-form="sgy-class">
@@ -1242,6 +1265,7 @@ function renderDashboard() {
     ${hero(allTodo, buckets)}
     ${dayPicker()}
     ${quickAddForm(null)}
+    ${sortBox()}
     ${filterBar(allTodo)}
     ${group('Overdue', buckets.late, true, 'overdue')}
     ${group('Today', buckets.today, true)}
@@ -1251,6 +1275,30 @@ function renderDashboard() {
     ${group('No due date', buckets.none, true)}
     ${todo.length ? '' : `<div class="empty"><p>Nothing due. Add homework above when you get some.</p></div>`}
     ${completedSection(tasks().filter((t) => t.done && classById(t.classId)), true)}`;
+}
+
+// ---------- Schoology "To sort" box ----------
+// Schoology's calendar doesn't say which class things are for. Homework it couldn't place lands in
+// the catch-all "Schoology" class; this box lets you put each one in a class with one pick.
+const inboxClass = () => classes().find((c) => c.schoologyId === 'none');
+function sortBox() {
+  const inbox = inboxClass();
+  if (!inbox) return '';
+  const items = tasks().filter((t) => t.classId === inbox.id && !t.done)
+    .sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'));
+  if (!items.length) return '';
+  const others = classes().filter((c) => c.id !== inbox.id);
+  const opts = `<option value="">Move to…</option>${others.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}<option value="__new">New class…</option>`;
+  const shown = items.slice(0, 15);
+  return `<section class="sort-box" aria-label="Homework to sort into classes">
+    <h3>To sort <span class="count">${items.length}</span></h3>
+    <p class="hint">Schoology doesn't say which class these are for. Pick a class and they stay there.${feed?.kind === 'schoology' && !feed.synced ? ' The <a href="#/settings">sync bookmark in Settings</a> can sort them for you.' : ''}</p>
+    <ul>${shown.map((t) => `<li>
+      <span class="sort-title">${esc(t.title)}<small class="${dueInfo(t.due).cls}">${dueInfo(t.due).label}</small></span>
+      <select class="field" data-sort-task="${t.id}" aria-label="Class for ${esc(t.title)}">${opts}</select>
+    </li>`).join('')}</ul>
+    ${items.length > shown.length ? `<p class="hint">${items.length - shown.length} more after you sort these.</p>` : ''}
+  </section>`;
 }
 
 function firstName() {
@@ -1478,6 +1526,8 @@ function renderSettings() {
     </section>` : ''}`;
 
   if (ONLINE && pushSupported && vapidKey && !(iOS && !installed)) refreshPushState();
+  const drag = document.querySelector('.sgy-bookmark');
+  if (drag) sgyBookmark().then((href) => { drag.href = href; drag.removeAttribute('data-action'); }).catch(() => {});
 }
 
 async function refreshPushState() {
@@ -1784,6 +1834,11 @@ document.addEventListener('click', async (e) => {
       refreshPushState();
       break;
     }
+    case 'sgy-bookmark-drag': toast('Drag it to your bookmarks bar, or use Copy bookmark code'); break;
+    case 'sgy-bookmark-copy':
+      try { await navigator.clipboard.writeText(await sgyBookmark()); toast('Copied. Paste it as the bookmark\'s address.'); }
+      catch { toast("Couldn't copy. Long-press Sync Homework and copy the link instead."); }
+      break;
     case 'sgy-class-remove': {
       if (!confirm("Remove this class calendar? Homework already sorted stays in its class.")) break;
       try { const r = await api('PUT', '/api/account', { sgyClassRemove: el.dataset.key }); feed = r.feed; toast('Removed'); render(); }
@@ -1958,6 +2013,22 @@ document.addEventListener('input', (e) => {
 });
 
 document.addEventListener('change', async (e) => {
+  if (e.target.dataset.sortTask) {
+    const t = state.tasks.find((x) => x.id === e.target.dataset.sortTask);
+    let classId = e.target.value;
+    if (!t || !classId) return;
+    if (classId === '__new') {
+      const name = (prompt('Name of the new class (for example, Biology)') || '').trim().slice(0, 60);
+      if (!name) { e.target.value = ''; return; }
+      const used = new Set(classes().map((x) => x.color));
+      classId = uid();
+      state.classes.push(touch({ id: classId, name, color: COLORS.find((x) => !used.has(x)) || COLORS[classes().length % COLORS.length], everyDay: true }));
+    }
+    touch(Object.assign(t, { classId }));
+    commit();
+    toast(`Moved to ${classById(classId)?.name || 'class'}`);
+    return;
+  }
   if (e.target.id === 'bd-dir') { saveBackdrop({ dir: e.target.value }); return; }
   if (e.target.id === 'text-color') { render(); return; } // show "Back to default" once you've picked one
   if (e.target.id === 'bd-file') {
@@ -2200,9 +2271,40 @@ function registerSW() {
 }
 
 let justSignedUp = false;
+
+// The sync bookmark's list: which Schoology assignment numbers are in which class.
+async function importSgySync() {
+  let data;
+  try { data = sessionStorage.getItem('hw-sgy-import'); sessionStorage.removeItem('hw-sgy-import'); } catch {}
+  if (!data) return;
+  try {
+    const json = decodeURIComponent(escape(atob(data.replace(/-/g, '+').replace(/_/g, '/'))));
+    const r = await api('PUT', '/api/account', { sgyMap: JSON.parse(json) });
+    feed = r.feed;
+    await pull();
+    toast(`Synced ${r.classes} class${r.classes === 1 ? '' : 'es'} from Schoology (${r.assignments} assignments)`);
+    render();
+  } catch (err) {
+    toast(`Schoology sync didn't work: ${err.message}`);
+  }
+}
 async function boot(again = false) {
   if (!again) {
-    window.addEventListener('hashchange', render);
+    // Came back from the Schoology sync bookmark: hold its class list until we know who's logged in.
+    if (location.hash.startsWith('#/sgy-import=')) {
+      try { sessionStorage.setItem('hw-sgy-import', location.hash.slice('#/sgy-import='.length)); } catch {}
+      history.replaceState(null, '', location.pathname + '#/');
+    }
+    window.addEventListener('hashchange', () => {
+      if (location.hash.startsWith('#/sgy-import=')) { // the bookmark came back while the site was already open
+        try { sessionStorage.setItem('hw-sgy-import', location.hash.slice('#/sgy-import='.length)); } catch {}
+        history.replaceState(null, '', location.pathname + '#/');
+        render();
+        if (authed) importSgySync();
+        return;
+      }
+      render();
+    });
     if (!ONLINE) { render(); return; }
     // stay fresh: re-check when you come back to the tab/app, and every few minutes while open
     document.addEventListener('visibilitychange', async () => { if (!document.hidden) { await pull(); syncIfStale(); } });
@@ -2229,6 +2331,7 @@ async function boot(again = false) {
   await loadSchoolCal();
   if (isOwn() && !schedule && justSignedUp) { justSignedUp = false; location.hash = '#/setup'; }
   render();
+  await importSgySync();
   registerSW();
   await pull();
   syncIfStale();

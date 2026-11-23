@@ -109,7 +109,7 @@ async function feedDiff(uid, profile, kind) {
     const got = await Promise.allSettled(classes.map(async (c) => ({ key: c.key, name: c.name, feed: await fetchFeed('schoology', decrypt(c.feedEnc)) })));
     const classFeeds = got.filter((g) => g.status === 'fulfilled').map((g) => g.value);
     if (got.length > classFeeds.length) console.warn('schoology class calendars failed', got.length - classFeeds.length);
-    return diffWithFeed(kind, await getState(uid), feed, ymd(new Date()), { classFeeds });
+    return diffWithFeed(kind, await getState(uid), feed, ymd(new Date()), { classFeeds, classMap: kind === 'schoology' ? profile.schoologyMap?.courses || [] : [] });
   } catch (e) {
     const s = await getState(uid);
     const msg = /stopped working|bad feed/i.test(e.message) ? `Your ${label} link stopped working. Paste a new one in Settings.` : `Couldn't reach ${label}: ${e.message}`;

@@ -32,6 +32,26 @@ export default async function handler(req, res) {
       if (!s) return res.status(400).json({ error: "That schedule doesn't look right." });
       p.schedule = s;
     }
+    // Schoology sync bookmark: { sgyMap: { courses: [{ name, ids }] } } — which assignment numbers are
+    // in which class, read from the student's own Schoology pages. Replaces the last sync's list.
+    if (body.sgyMap !== undefined) {
+      if (!p.schoology) return res.status(400).json({ error: 'Connect your Schoology calendar first (Settings, then Schoology).' });
+      const raw = Array.isArray(body.sgyMap?.courses) ? body.sgyMap.courses.slice(0, 40) : null;
+      if (!raw) return res.status(400).json({ error: "That sync didn't come through right. Try the bookmark again." });
+      let total = 0;
+      const courses = raw.map((c) => {
+        const name = String(c?.name || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+        const ids = [...new Set((Array.isArray(c?.ids) ? c.ids : []).map(String).filter((n) => /^\d{4,15}$/.test(n)))].slice(0, 400);
+        total += ids.length;
+        return { name, ids };
+      }).filter((c) => c.name && c.ids.length);
+      if (total > 6000) return res.status(400).json({ error: 'That sync was too big.' });
+      p.schoologyMap = { courses, at: Date.now() };
+      await saveProfile(uid, p);
+      let sync = {};
+      try { sync = await syncUser(uid, { notify: false }); } catch (e) { sync = { syncError: e.message }; }
+      return res.json({ ok: true, feed: feedInfo(p), classes: courses.length, assignments: total, ...sync });
+    }
     // Schoology class calendars: { sgyClass: link, name? } adds one; { sgyClassRemove: key } removes one.
     if (body.sgyClass !== undefined || body.sgyClassRemove !== undefined) {
       if (!p.schoology) return res.status(400).json({ error: 'Connect your Schoology calendar first.' });

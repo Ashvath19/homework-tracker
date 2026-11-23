@@ -518,3 +518,12 @@ body.has-bd::after { content: ''; position: fixed; inset: 0; z-index: -1; pointe
 #class-dialog .class-color { display: inline-flex; flex-direction: row; align-items: center; gap: 10px; margin: 0; font-weight: 400; }
 .sgy-classes { list-style: none; padding: 0; margin: 0 0 10px; }
 .sgy-classes li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--rule); }
+.sort-box { margin: 0 0 22px; padding: 14px 16px; border: 1px solid var(--rule); border-left: 3px solid var(--pen); border-radius: 10px; background: var(--sheet); }
+.sort-box h3 { margin: 0 0 4px; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+.sort-box .count { font-size: 13px; color: var(--ink-3); font-weight: 500; }
+.sort-box ul { list-style: none; margin: 10px 0 0; padding: 0; }
+.sort-box li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--rule); }
+.sort-title { display: flex; flex-direction: column; min-width: 0; }
+.sort-title small { color: var(--ink-3); font-size: 12.5px; }
+.sort-title small.late { color: var(--red); }
+.sort-box select { width: auto; max-width: 48%; padding: 6px 8px; flex: none; }

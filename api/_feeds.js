@@ -31,7 +31,10 @@ export function feedInfo(p) {
   const kind = feedKinds.find((k) => p?.[k]);
   return kind ? {
     kind, label: feedLabel(kind), host: p[kind].host, name: p[kind].name || '',
-    ...(kind === 'schoology' ? { classes: (p.schoologyClasses || []).map(({ key, name }) => ({ key, name })) } : {}),
+    ...(kind === 'schoology' ? {
+      classes: (p.schoologyClasses || []).map(({ key, name }) => ({ key, name })),
+      synced: p.schoologyMap ? { at: p.schoologyMap.at, classes: p.schoologyMap.courses.length, ids: p.schoologyMap.courses.reduce((n, c) => n + c.ids.length, 0) } : null,
+    } : {}),
   } : null;
 }
 
@@ -335,11 +338,17 @@ const READERS = { canvas: readCanvas, schoology: readSchoology };
 
 // Compares the feed with our saved state and returns only the items that changed.
 // classFeeds (Schoology): [{ key, name, feed }] — one calendar per class, added by the student.
-export function diffWithFeed(kind, state, feed, todayYmd, { classFeeds = [] } = {}) {
+// classMap (Schoology): [{ name, ids }] — which assignment numbers belong to which class, sent by
+// the sync bookmark from the student's own Schoology pages.
+export function diffWithFeed(kind, state, feed, todayYmd, { classFeeds = [], classMap = [] } = {}) {
   const now = Date.now();
   let ctx = null;
   if (kind === 'schoology') {
     const classOf = new Map();
+    for (const c of classMap) {
+      const cls = { name: c.name, id: `map-${shortHash(c.name.toLowerCase())}` };
+      for (const n of c.ids) for (const type of ['assignment', 'assessment', 'discussion', 'event']) classOf.set(`${type}-${n}`, cls);
+    }
     for (const cf of classFeeds) {
       for (const ev of cf.feed.events) {
         const h = schoologyHomework(ev);
@@ -350,7 +359,7 @@ export function diffWithFeed(kind, state, feed, todayYmd, { classFeeds = [] } = 
     feed = { ...feed, events: [...feed.events, ...classFeeds.flatMap((cf) => cf.feed.events)] };
     const hw = feed.events.map(schoologyHomework).filter(Boolean);
     ctx = { classOf, spot: classOf.size ? null : pickClassSpot(hw) };
-    logShape(feed, hw, ctx.spot, { classFeeds: classFeeds.length, matched: hw.filter((h) => classOf.has(sgyId(h))).length });
+    logShape(feed, hw, ctx.spot, { classFeeds: classFeeds.length, mapClasses: classMap.length, matched: hw.filter((h) => classOf.has(sgyId(h))).length });
   }
   const items = new Map();
   for (const ev of feed.events) {
