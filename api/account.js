@@ -3,9 +3,9 @@
 // PUT    /api/account { feed: link | null } → connect (or disconnect) a Canvas or Schoology calendar link
 // DELETE /api/account → permanently delete your account and all your data
 import crypto from 'node:crypto';
-import { redis, K, requireUser, deleteUser, endSession, startSession, sessionFp, getProfile, saveProfile, getState, putState, tooManyFailures, encrypt, fingerprint } from './_lib.js';
+import { redis, K, requireUser, deleteUser, endSession, startSession, sessionFp, getProfile, saveProfile, getState, putState, tooManyFailures, encrypt, fingerprint, mergeState } from './_lib.js';
 import { cleanName } from './_passkey.js';
-import { connectFeed, feedKindOf, feedKinds, FEEDS, feedInfo, cleanFeedUrl, fetchFeed } from './_feeds.js';
+import { connectFeed, feedKindOf, feedKinds, FEEDS, feedInfo, cleanFeedUrl, fetchFeed, addMapClasses } from './_feeds.js';
 import { syncUser } from './sync.js';
 
 export default async function handler(req, res) {
@@ -48,9 +48,14 @@ export default async function handler(req, res) {
       if (total > 6000) return res.status(400).json({ error: 'That sync was too big.' });
       p.schoologyMap = { courses, at: Date.now() };
       await saveProfile(uid, p);
+      // Make every class the bookmark found, right away (any it sees with no homework too).
+      const all = raw.map((c) => ({ name: String(c?.name || '').replace(/\s+/g, ' ').trim().slice(0, 80) })).filter((c) => c.name);
+      const st = await getState(uid);
+      const added = addMapClasses(st, all);
+      if (added.length) { const merged = mergeState(st, { classes: added, tasks: [] }); merged.meta = st.meta; await putState(uid, merged); }
       let sync = {};
       try { sync = await syncUser(uid, { notify: false }); } catch (e) { sync = { syncError: e.message }; }
-      return res.json({ ok: true, feed: feedInfo(p), classes: courses.length, assignments: total, ...sync });
+      return res.json({ ok: true, feed: feedInfo(p), classes: all.length, assignments: total, ...sync });
     }
     // Schoology class calendars: { sgyClass: link, name? } adds one; { sgyClassRemove: key } removes one.
     if (body.sgyClass !== undefined || body.sgyClassRemove !== undefined) {

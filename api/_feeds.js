@@ -338,6 +338,23 @@ const READERS = { canvas: readCanvas, schoology: readSchoology };
 
 // Compares the feed with our saved state and returns only the items that changed.
 // classFeeds (Schoology): [{ key, name, feed }] — one calendar per class, added by the student.
+// The sync bookmark's classes exist right away (even before any homework matches them), with the
+// same ids the sorting below uses, so they're never duplicated. Returns the classes it added.
+export function addMapClasses(state, courses) {
+  const now = Date.now();
+  const used = new Set(state.classes.filter((c) => !c.deleted).map((c) => c.color));
+  const added = [];
+  for (const c of courses) {
+    const courseId = `map-${shortHash(c.name.toLowerCase())}`;
+    const existing = state.classes.find((x) => x.schoologyId === courseId);
+    if (existing && !existing.deleted) continue;
+    const color = COLORS.find((x) => !used.has(x)) || COLORS[(state.classes.length + added.length) % COLORS.length];
+    used.add(color);
+    added.push({ ...(existing || {}), id: `schoology-c${shortHash(courseId)}`, schoologyId: courseId, name: cleanCourseName(c.name), color, everyDay: true, deleted: false, updatedAt: now });
+  }
+  return added;
+}
+
 // classMap (Schoology): [{ name, ids }] — which assignment numbers belong to which class, sent by
 // the sync bookmark from the student's own Schoology pages.
 export function diffWithFeed(kind, state, feed, todayYmd, { classFeeds = [], classMap = [] } = {}) {
