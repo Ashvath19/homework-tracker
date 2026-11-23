@@ -1283,6 +1283,7 @@ function sortBox() {
   return `<section class="sort-box" aria-label="Homework to sort into classes">
     <h3>To sort <span class="count">${items.length}</span></h3>
     <p class="hint">Schoology doesn't say which class these are for. Pick a class and they stay there.${feed?.kind === 'schoology' && !feed.synced ? ' The <a href="#/settings">sync bookmark in Settings</a> can sort them for you.' : ''}</p>
+    ${feed?.kind === 'schoology' && feed.synced && items.length >= 3 ? `<p class="sort-nudge">${items.length} waiting to be sorted (last synced ${ago(feed.synced.at)}). Go to your Schoology tab and tap <b>Sync Homework</b> to sort them all at once.</p>` : ''}
     <ul>${shown.map((t) => `<li>
       <span class="sort-title">${esc(t.title)}<small class="${dueInfo(t.due).cls}">${dueInfo(t.due).label}</small></span>
       <select class="field" data-sort-task="${t.id}" aria-label="Class for ${esc(t.title)}">${opts}</select>
