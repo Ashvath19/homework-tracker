@@ -787,7 +787,12 @@ function applyBackdrop() {
   st.setProperty('--bd-fade', `${Math.round(Math.min(0.95, Math.max(0.4, +backdrop.fade || 0.72)) * 100)}%`);
   // Your text color, with lighter shades of it for hints and labels
   const text = textNow();
-  for (const [k, v] of Object.entries({ '--ink': text, '--ink-2': text && `color-mix(in srgb, ${text} 72%, var(--paper))`, '--ink-3': text && `color-mix(in srgb, ${text} 52%, var(--paper))` })) {
+  // Everything drawn in "ink" follows it: secondary text, dates and labels (slightly softer shades
+  // of your color), divider lines, borders and hover highlights.
+  const mix = (pct, base = 'var(--paper)') => text && `color-mix(in srgb, ${text} ${pct}%, ${base})`;
+  for (const [k, v] of Object.entries({
+    '--ink': text, '--ink-2': mix(86), '--ink-3': mix(68), '--rule': mix(26), '--hover': mix(8, 'transparent'),
+  })) {
     if (v) st.setProperty(k, v); else st.removeProperty(k);
   }
   const warn = document.getElementById('text-warn');
