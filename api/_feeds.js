@@ -198,7 +198,26 @@ const CLASS_SPOTS = {
   dashSuffix: (ev, sum) => { const m = /^(.+?)\s+[-–]\s+([^-–]{2,60})$/.exec(sum); return m ? { name: clip(m[2]), title: m[1] } : null; },
   parenSuffix: (ev, sum) => { const m = /^(.+?)\s*\(([^()]{2,60})\)\s*$/.exec(sum); return m ? { name: clip(m[2]), title: m[1] } : null; },
   descFirstLine: (ev) => { const v = clip(unescape(ev.DESCRIPTION?.value || '').split('\n')[0]); return v && !/^https?:/i.test(v) ? { name: v } : null; },
+  descLabel: (ev) => { const v = clip(/^\s*(?:Course|Class|Section)\s*[:\-]\s*(.+)$/im.exec(unescape(ev.DESCRIPTION?.value || ''))?.[1]); return v ? { name: v } : null; },
+  descLastLine: (ev) => { const v = clip(unescape(ev.DESCRIPTION?.value || '').trim().split('\n').pop()); return v && !/^https?:/i.test(v) ? { name: v } : null; },
 };
+// Numbers in each entry's ID and link (Schoology may include a section number). The class has
+// no name there, so these become "Schoology class 1, 2, …", which students can rename once.
+const numbersIn = (s) => (String(s || '').match(/\d{3,}/g) || []);
+function numberSpots(items) {
+  const out = {};
+  for (const [src, get] of [['uid', (ev) => ev.UID?.value], ['link', (ev) => sgyLink(ev).replace(/^https:\/\/[^/]+/, '')]]) {
+    for (let k = 0; k < 4; k++) {
+      const vals = items.map((h) => numbersIn(get(h.ev))[k]).filter(Boolean);
+      const order = [...new Set(vals)].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
+      out[`${src}Number${k + 1}`] = (ev) => {
+        const n = numbersIn(get(ev))[k];
+        return n ? { name: `Schoology class ${order.indexOf(n) + 1 || order.length + 1}`, id: `${src}${k}-${n}` } : null;
+      };
+    }
+  }
+  return out;
+}
 const xSpots = (events) => [...new Set(events.flatMap((e) => Object.keys(e).filter((k) => k.startsWith('X-'))))]
   .reduce((o, k) => ({ ...o, [k]: (ev) => { const v = clip(unescape(ev[k]?.value || '')); return v ? { name: v } : null; } }), {});
 
@@ -219,7 +238,7 @@ function schoologyHomework(ev) {
 // The spot that groups the homework most like classes: present on most items, 2-20 different
 // values, and several items per value. Returns null if nothing looks like classes.
 export function pickClassSpot(items) {
-  const spots = { ...CLASS_SPOTS, ...xSpots(items.map((h) => h.ev)) };
+  const spots = { ...CLASS_SPOTS, ...xSpots(items.map((h) => h.ev)), ...numberSpots(items) };
   let best = null;
   for (const [key, fn] of Object.entries(spots)) {
     const names = items.map((h) => fn(h.ev, h.summary)?.name).filter(Boolean);
@@ -268,7 +287,19 @@ function logShape(cal, items, spot) {
     }
   }
   const out = Object.fromEntries(Object.entries(fields).map(([k, x]) => [k, { n: x.n, distinct: x.values.size, samples: [...x.samples], params: [...x.params].slice(0, 3) }]));
-  delete out.UID?.samples; delete out.DTSTART?.samples;
+  delete out.DTSTART?.samples;
+  // IDs and link paths with letters kept (they're Schoology's words, like "assignment") and numbers blanked.
+  const shapeOf = (v) => String(v || '').replace(/^https?:\/\/[^/]+/, '').replace(/\d+/g, 'N').slice(0, 60);
+  const tally = (vals) => Object.entries(vals.reduce((o, v) => ({ ...o, [v]: (o[v] || 0) + 1 }), {})).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  if (out.UID) out.UID.shapes = tally(cal.events.slice(0, 400).map((e) => shapeOf(e.UID?.value)));
+  if (out.URL) out.URL.shapes = tally(cal.events.slice(0, 400).map((e) => shapeOf(e.URL?.value)));
+  // How many numbers each ID / link has, and how many different values each position takes across homework.
+  const numStats = (get) => [0, 1, 2, 3].map((k) => new Set(items.map((h) => numbersIn(get(h.ev))[k]).filter(Boolean)).size);
+  out.numbers = { uid: numStats((ev) => ev.UID?.value), link: numStats((ev) => sgyLink(ev).replace(/^https:\/\/[^/]+/, '')) };
+  // Description lines: count, and masked last lines (where some systems put the class).
+  const lines = items.map((h) => unescape(h.ev.DESCRIPTION?.value || '').trim().split('\n'));
+  out.descLines = { avg: +(lines.reduce((a, l) => a + l.length, 0) / (lines.length || 1)).toFixed(1),
+    lastDistinct: new Set(lines.map((l) => l[l.length - 1])).size, lastSamples: [...new Set(lines.map((l) => mask(l[l.length - 1])))].slice(0, 5) };
   console.log('schoology feed shape', JSON.stringify({ events: cal.events.length, homework: items.length, picked: spot ? { key: spot.key, classes: spot.distinct, coverage: +spot.coverage.toFixed(2) } : null, fields: out }));
 }
 

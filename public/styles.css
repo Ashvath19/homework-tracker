@@ -491,3 +491,6 @@ body.has-bd::after { content: ''; position: fixed; inset: 0; z-index: -1; pointe
 .account-name { align-items: center; justify-content: flex-start; gap: 10px 14px; }
 .account-name p { margin: 0; }
 .account-name .btn { display: inline-flex; align-items: center; gap: 6px; }
+.tint-preview { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 12px 0 0; font-size: 14px; color: var(--ink-2); }
+.tint-preview .chip { display: inline-flex; align-items: center; gap: 6px; }
+.class-color input[type=color] { width: 56px; height: 40px; }

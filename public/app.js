@@ -422,7 +422,7 @@ function renderCalendar(cls) {
     const ds = `${calMonth}-${String(d).padStart(2, '0')}`;
     const todo = (byDay[ds] || []).filter((t) => !t.done);
     const big = todo.some((t) => TAGS[t.tag]?.big);
-    const dots = todo.slice(0, 3).map((t) => `<i style="background:${classById(t.classId).color}"></i>`).join('')
+    const dots = todo.slice(0, 3).map((t) => `<i style="background:${classColor(classById(t.classId))}"></i>`).join('')
       + (todo.length > 3 ? '<b>+</b>' : '');
     const info = dayInfo(ds);
     const letter = dayName(info);
@@ -448,7 +448,7 @@ function renderCalendar(cls) {
         <button class="icon-btn" data-action="cal-move" data-step="-1" aria-label="Previous month">‹</button>
         <button class="icon-btn" data-action="cal-move" data-step="1" aria-label="Next month">›</button>
       </div>
-      ${cls ? `<p class="cal-for"><span class="dot" style="background:${cls.color}"></span>${esc(cls.name)} only</p>` : ''}
+      ${cls ? `<p class="cal-for"><span class="dot" style="background:${classColor(cls)}"></span>${esc(cls.name)} only</p>` : ''}
       <div class="cal-grid">${WEEKDAYS.map((w) => `<span class="cal-wd">${w}</span>`).join('')}${cells.join('')}</div>
       ${calMonth !== today.slice(0, 7) || calSel !== today ? `<button class="link-btn cal-today" data-action="cal-today">Back to today</button>` : ''}
       <div class="cal-day">
@@ -457,7 +457,7 @@ function renderCalendar(cls) {
         ${sel.length ? `<ul class="cal-list">${sel.map((t) => {
           const c = classById(t.classId);
           return `<li data-id="${t.id}" class="${t.done ? 'done' : ''}"><button data-action="open-task">
-            <span class="dot" style="background:${c.color}"></span>
+            <span class="dot" style="background:${classColor(c)}"></span>
             <span class="cal-t">${TAGS[t.tag]?.big ? `<b>${TAGS[t.tag].label}:</b> ` : ''}${esc(t.title)}<small>${esc(c.name)}</small></span></button></li>`;
         }).join('')}</ul>` : `<p class="cal-none">Nothing due.</p>`}
         ${canMark ? `<button class="link-btn cal-mark" data-action="cal-mark-off">${schedule.off?.includes(calSel) ? 'Actually, there is school this day' : 'Mark as no school'}</button>` : ''}
@@ -674,7 +674,7 @@ function renderSidebar(active) {
   document.querySelector('[data-route="/settings"]').classList.toggle('active', active === '/settings');
   $('#class-list').innerHTML = classes().map((c) => `
     <a href="#/class/${c.id}" class="nav-link ${c.id === active ? 'active' : ''}">
-      <span class="dot" style="background:${c.color}"></span>
+      <span class="dot" style="background:${classColor(c)}"></span>
       <span>${esc(c.name)}</span>
       <span class="count">${counts[c.id] || ''}</span>
     </a>`).join('') || `<p class="subtitle" style="margin:4px 10px;font-size:13px">No classes yet</p>`;
@@ -718,7 +718,7 @@ function taskRow(t, showClass) {
   const tag = TAGS[t.tag] || TAGS.homework;
   const title = `<span class="tag tag-${t.tag || 'homework'}">${tag.label}</span>${esc(t.title)}`;
   const meta = (showClass && c) || t.notes || t.doneBy === 'moodle' || t.doneBy === 'canvas' || t.doneBy === 'schoology' || t.source === 'lesson' || t.files?.length || t.study?.length ? `<span class="task-meta">
-          ${showClass && c ? `<span class="chip"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}</span>` : ''}
+          ${showClass && c ? `<span class="chip"><span class="dot" style="background:${classColor(c)}"></span>${esc(c.name)}</span>` : ''}
           ${t.source === 'lesson' && !t.done ? `<span title="From the lesson plan for ${esc(t.chapter || '')}">Lesson plan</span>` : ''}
           ${!t.done && (t.study?.length) ? `<span>${t.study.length} study file${t.study.length === 1 ? '' : 's'}</span>` : ''}
           ${!t.done && !t.study?.length && t.files?.length ? `<span>${t.files.length} file${t.files.length === 1 ? '' : 's'}</span>` : ''}
@@ -767,7 +767,8 @@ const OLD_PRESETS = { // presets from before you could pick your own colors
 };
 const HEX = /^#[0-9a-f]{6}$/i;
 const MAX_STOPS = 6;
-let backdrop = { mode: 'plain', color: '#8ec5fc', stops: ['#a1c4fd', '#fbc2eb'], dir: '135', fade: 0.72, textLight: '', textDark: '' };
+let backdrop = { mode: 'plain', color: '#8ec5fc', stops: ['#a1c4fd', '#fbc2eb'], dir: '135', fade: 0.72, textLight: '', textDark: '',
+  tintOn: false, tint: '#7c6cf0', tintStrength: 0.85 };
 // Text color is saved separately for light and dark mode, so dark text picked in the day
 // doesn't vanish when your device switches to dark mode at night.
 const darkMq = window.matchMedia?.('(prefers-color-scheme: dark)');
@@ -782,7 +783,7 @@ try {
   if (!saved.stops && saved.g1 && saved.g2) saved.stops = [saved.g1, saved.g2]; // two-color version
   if (saved.stops && !(Array.isArray(saved.stops) && saved.stops.length >= 2 && saved.stops.every((c) => HEX.test(c)))) delete saved.stops;
   if (saved.stops) saved.stops = saved.stops.slice(0, MAX_STOPS);
-  for (const k of ['color', 'textLight', 'textDark']) if (saved[k] && !HEX.test(saved[k])) delete saved[k];
+  for (const k of ['color', 'textLight', 'textDark', 'tint']) if (saved[k] && !HEX.test(saved[k])) delete saved[k];
   backdrop = { ...backdrop, ...saved };
 } catch {}
 
@@ -814,8 +815,8 @@ function applyBackdrop() {
 }
 function saveBackdrop(changes) {
   backdrop = { ...backdrop, ...changes };
-  const { mode, color, stops, dir, fade, textLight, textDark } = backdrop;
-  safeSet('hw-backdrop', JSON.stringify({ mode, color, stops, dir, fade, textLight, textDark }));
+  const { mode, color, stops, dir, fade, textLight, textDark, tintOn, tint, tintStrength } = backdrop;
+  safeSet('hw-backdrop', JSON.stringify({ mode, color, stops, dir, fade, textLight, textDark, tintOn, tint, tintStrength }));
   applyBackdrop();
 }
 applyBackdrop();
@@ -836,6 +837,57 @@ function contrast() {
   const panel = paper.map((v, i) => v * f + under[i] * (1 - f));
   const [x, y] = [lum(rgb(textNow())), lum(panel)].sort((m, n) => n - m);
   return (x + 0.05) / (y + 0.05);
+}
+
+// ---------- class colors: "match to one color" ----------
+// Each class color is turned to gray (keeping how light or dark it is), then tinted with the color
+// you picked. Lightness is spread across your classes so they stay easy to tell apart, and the
+// strength slider keeps colors closer to their originals.
+const hexOf = (r, g, b) => '#' + [r, g, b].map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('');
+function rgbToHsl([r, g, b]) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min, sat = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h / 6, sat, l];
+}
+function hslToRgb([h, sat, l]) {
+  if (!sat) return [l * 255, l * 255, l * 255];
+  const q = l < 0.5 ? l * (1 + sat) : l + sat - l * sat, p = 2 * l - q;
+  const f = (t) => { t = (t + 1) % 1; return 255 * (t < 1 / 6 ? p + (q - p) * 6 * t : t < 1 / 2 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p); };
+  return [f(h + 1 / 3), f(h), f(h - 1 / 3)];
+}
+const grayOf = (hex) => { const [r, g, b] = rgb(hex); return 0.299 * r + 0.587 * g + 0.114 * b; };
+let tintCache = null;
+function classColor(c) {
+  const orig = HEX.test(c?.color || '') ? c.color : COLORS[0];
+  if (!backdrop.tintOn) return orig;
+  const key = `${backdrop.tint}|${backdrop.tintStrength}|${state.classes.map((x) => x.color).join()}`;
+  if (tintCache?.key !== key) {
+    // rank classes from darkest to lightest, then give them evenly spaced shades of the tint
+    const grays = [...new Set(state.classes.filter((x) => !x.deleted && HEX.test(x.color || '')).map((x) => x.color))].sort((a, b) => grayOf(a) - grayOf(b));
+    const [h, sat] = rgbToHsl(rgb(backdrop.tint));
+    const map = new Map(grays.map((col, i) => {
+      const l = grays.length > 1 ? 0.34 + (0.38 * i) / (grays.length - 1) : rgbToHsl(rgb(backdrop.tint))[2];
+      const tinted = hslToRgb([h, Math.max(0.35, sat), l]);
+      const k = +backdrop.tintStrength || 0.85;
+      return [col, hexOf(...rgb(col).map((v, j) => v * (1 - k) + tinted[j] * k))];
+    }));
+    tintCache = { key, map };
+  }
+  return tintCache.map.get(orig) || orig;
+}
+
+// Recolor the class dots already on screen, so dragging a picker doesn't redraw (and close) it.
+function refreshClassColors() {
+  for (const a of document.querySelectorAll('#class-list a[href^="#/class/"]')) {
+    const c = classById(a.getAttribute('href').slice(8));
+    const dot = a.querySelector('.dot');
+    if (c && dot) dot.style.background = classColor(c);
+  }
+  const prev = document.querySelector('.tint-preview');
+  if (prev) prev.innerHTML = classes().slice(0, 8).map((c) => `<span class="chip"><span class="dot" style="background:${classColor(c)}"></span>${esc(c.name)}</span>`).join('');
 }
 
 function backdropCard() {
@@ -870,6 +922,18 @@ function backdropCard() {
     ${b.mode !== 'plain' ? `<label class="bd-fade">How much shows through
       <input type="range" id="bd-fade" min="40" max="95" step="1" value="${Math.round(135 - b.fade * 100)}">
     </label>` : ''}
+
+    <h4 class="sub">Class colors</h4>
+    <div class="seg bd-modes" role="group" aria-label="Class colors">
+      <button data-action="tint-mode" data-on="0" aria-pressed="${!b.tintOn}">Each class's own</button>
+      <button data-action="tint-mode" data-on="1" aria-pressed="${!!b.tintOn}">Match to one color</button>
+    </div>
+    ${b.tintOn ? `<div class="row">${pick('tint-color', 'Match to', b.tint)}</div>
+    <label class="bd-fade">How close to that color
+      <input type="range" id="tint-strength" min="30" max="100" step="1" value="${Math.round((b.tintStrength || 0.85) * 100)}">
+    </label>
+    <div class="tint-preview">${classes().slice(0, 8).map((c) => `<span class="chip"><span class="dot" style="background:${classColor(c)}"></span>${esc(c.name)}</span>`).join('')}</div>
+    <p class="hint">Your classes keep their own colors underneath, so you can switch back anytime.</p>` : ''}
 
     <h4 class="sub">Text color</h4>
     <div class="row">
@@ -1028,7 +1092,7 @@ function dayPicker() {
       <ul>
         ${need.map((c) => `
           <li>
-            <span class="chip"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}</span>
+            <span class="chip"><span class="dot" style="background:${classColor(c)}"></span>${esc(c.name)}</span>
             <span class="seg" role="group" aria-label="${esc(c.name)} day">
               ${opts.map((o) => `<button data-action="set-day" data-class="${c.id}" data-day="${esc(o)}">${esc(o)}</button>`).join('')}
               <button data-action="set-day" data-class="${c.id}" data-day="">Every day</button>
@@ -1046,7 +1110,7 @@ function dayPicker() {
       <ul>
         ${need.map((c) => `
           <li>
-            <span class="chip"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}</span>
+            <span class="chip"><span class="dot" style="background:${classColor(c)}"></span>${esc(c.name)}</span>
             <span class="seg" role="group" aria-label="${esc(c.name)} day">
               <button data-action="set-day" data-class="${c.id}" data-day="A">A day</button>
               <button data-action="set-day" data-class="${c.id}" data-day="B">B day</button>
@@ -1076,7 +1140,7 @@ function renderClass(c) {
 
   $('#main').innerHTML = `
     <div class="page-header">
-      <span class="dot" style="background:${c.color};width:14px;height:14px"></span>
+      <span class="dot" style="background:${classColor(c)};width:14px;height:14px"></span>
       <h2>${esc(c.name)}</h2>
       <div class="actions"><button class="btn" data-action="edit-class" data-class="${c.id}">Edit class</button></div>
     </div>
@@ -1263,7 +1327,7 @@ function openDetail(id) {
   $('#detail-body').innerHTML = `
     <div class="detail-top">
       <span class="tag tag-${t.tag || 'homework'}">${tag.label}</span>
-      ${c ? `<span class="chip"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}</span>` : ''}
+      ${c ? `<span class="chip"><span class="dot" style="background:${classColor(c)}"></span>${esc(c.name)}</span>` : ''}
       <button class="icon-btn detail-close" data-action="detail-close" aria-label="Close">×</button>
     </div>
     <h2>${esc(t.title)}</h2>
@@ -1350,9 +1414,7 @@ function openClassDialog(id) {
   f.day.value = c?.day || '';
   const used = new Set(classes().map((x) => x.color));
   const color = c ? c.color : COLORS.find((x) => !used.has(x)) || COLORS[classes().length % COLORS.length];
-  $('#color-swatches').innerHTML = COLORS.map((col) => `
-    <label><input type="radio" name="color" value="${col}" ${col === color ? 'checked' : ''}>
-    <span style="background:${col}"></span></label>`).join('');
+  $('#color-swatches').innerHTML = `<label class="color-pick class-color"><input type="color" name="color" value="${esc(color)}"><span>Pick any color</span></label>`;
   $('#class-dialog').showModal();
 }
 $('#class-dialog').addEventListener('close', () => {
@@ -1360,7 +1422,7 @@ $('#class-dialog').addEventListener('close', () => {
   if (dlg.returnValue === 'save') {
     const f = $('#class-form');
     const name = f.name.value.trim();
-    const color = f.querySelector('input[name=color]:checked')?.value || COLORS[0];
+    const color = /^#[0-9a-f]{6}$/i.test(f.color?.value || '') ? f.color.value.toLowerCase() : COLORS[0];
     if (name) {
       if (editingClassId) {
         const c = classById(editingClassId);
@@ -1519,6 +1581,7 @@ document.addEventListener('click', async (e) => {
     case 'bd-upload': $('#bd-file')?.click(); break;
     case 'bd-photo-off': safeSet('hw-backdrop-photo', null); saveBackdrop({ mode: 'plain' }); render(); break;
     case 'text-reset': saveBackdrop({ [textKey()]: '' }); render(); break;
+    case 'tint-mode': saveBackdrop({ tintOn: el.dataset.on === '1' }); render(); break;
     case 'rename-open': {
       const f = document.querySelector('[data-form=rename]');
       f.hidden = false; el.closest('.account-name').hidden = true;
@@ -1640,6 +1703,8 @@ document.addEventListener('click', async (e) => {
 document.addEventListener('input', (e) => {
   // range 40–95 → panels 95%–40% solid
   if (e.target.id === 'bd-fade') { saveBackdrop({ fade: (135 - +e.target.value) / 100 }); return; }
+  if (e.target.id === 'tint-strength') { saveBackdrop({ tintStrength: +e.target.value / 100 }); refreshClassColors(); return; }
+  if (e.target.id === 'tint-color' && HEX.test(e.target.value)) { saveBackdrop({ tint: e.target.value.toLowerCase() }); refreshClassColors(); return; }
   // color pickers update live as you drag, without redrawing the page (that would close the picker)
   if (e.target.matches('.bd-stop-color') && HEX.test(e.target.value)) {
     const stops = [...backdrop.stops];
