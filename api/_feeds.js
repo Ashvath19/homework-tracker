@@ -393,7 +393,19 @@ export function diffWithFeed(kind, state, feed, todayYmd) {
       changedClasses.push({ ...fallback, deleted: true, updatedAt: now });
     }
   }
-  return { changedClasses, changedTasks, newTasks, eventCount: upcoming, classSpot: ctx?.spot?.key || null };
+  // Schoology: the "- Word: CODE" tags at the end of descriptions, so the student can see them in
+  // Settings (stored in their own account only; never logged).
+  let feedTags;
+  if (kind === 'schoology') {
+    const counts = new Map();
+    for (const ev of feed.events) {
+      const h = schoologyHomework(ev);
+      const m = h && /[-–]\s*([A-Za-z]{2,12})\s*:\s*([^\n:]{1,30}?)\s*$/.exec(unescape(ev.DESCRIPTION?.value || '').trim());
+      if (m) { const k = `${m[1]}\u0000${m[2]}`; counts.set(k, (counts.get(k) || 0) + 1); }
+    }
+    feedTags = [...counts].sort((a, b) => b[1] - a[1]).slice(0, 20).map(([k, count]) => { const [label, code] = k.split('\u0000'); return { label, code, count }; });
+  }
+  return { changedClasses, changedTasks, newTasks, eventCount: upcoming, classSpot: ctx?.spot?.key || null, feedTags };
 }
 
 function addDaysYmd(d, n) {

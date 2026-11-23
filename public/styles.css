@@ -515,3 +515,4 @@ body.has-bd::after { content: ''; position: fixed; inset: 0; z-index: -1; pointe
 .anim-row .check-row { margin-bottom: 8px; }
 .anim-style { margin-left: 28px; }
 .anim-style select { width: auto; padding: 6px 8px; }
+#class-dialog .class-color { display: inline-flex; flex-direction: row; align-items: center; gap: 10px; margin: 0; font-weight: 400; }

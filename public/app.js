@@ -965,7 +965,7 @@ const OLD_PRESETS = { // presets from before you could pick your own colors
 const HEX = /^#[0-9a-f]{6}$/i;
 const MAX_STOPS = 6;
 let backdrop = { mode: 'plain', color: '#8ec5fc', stops: ['#a1c4fd', '#fbc2eb'], dir: '135', fade: 0.72, textLight: '', textDark: '',
-  tintOn: false, tint: '#7c6cf0', tintStrength: 0.85 };
+  tintOn: false, tint: '#7c6cf0', tintStrength: 1, tintFrom: 'backdrop' };
 // Text color is saved separately for light and dark mode, so dark text picked in the day
 // doesn't vanish when your device switches to dark mode at night.
 const darkMq = window.matchMedia?.('(prefers-color-scheme: dark)');
@@ -1012,8 +1012,8 @@ function applyBackdrop() {
 }
 function saveBackdrop(changes) {
   backdrop = { ...backdrop, ...changes };
-  const { mode, color, stops, dir, fade, textLight, textDark, tintOn, tint, tintStrength } = backdrop;
-  safeSet('hw-backdrop', JSON.stringify({ mode, color, stops, dir, fade, textLight, textDark, tintOn, tint, tintStrength }));
+  const { mode, color, stops, dir, fade, textLight, textDark, tintOn, tint, tintStrength, tintFrom } = backdrop;
+  safeSet('hw-backdrop', JSON.stringify({ mode, color, stops, dir, fade, textLight, textDark, tintOn, tint, tintStrength, tintFrom }));
   applyBackdrop();
 }
 applyBackdrop();
@@ -1057,23 +1057,32 @@ function hslToRgb([h, sat, l]) {
 }
 const grayOf = (hex) => { const [r, g, b] = rgb(hex); return 0.299 * r + 0.587 * g + 0.114 * b; };
 let tintCache = null;
+// The color class shades are made from: your backdrop's main color, or one you pick.
+const backdropMain = () => backdrop.mode === 'color' ? backdrop.color : backdrop.mode === 'gradient' ? backdrop.stops[0] : null;
+const tintBase = () => (backdrop.tintFrom === 'backdrop' && backdropMain()) || backdrop.tint;
 function classColor(c) {
   const orig = HEX.test(c?.color || '') ? c.color : COLORS[0];
   if (!backdrop.tintOn) return orig;
-  const key = `${backdrop.tint}|${backdrop.tintStrength}|${state.classes.map((x) => x.color).join()}`;
+  const base = tintBase();
+  const dark = !!darkMq?.matches;
+  const key = `${base}|${backdrop.tintStrength}|${dark}|${state.classes.map((x) => `${x.id}${x.color}${x.deleted ? 'x' : ''}`).join()}`;
   if (tintCache?.key !== key) {
-    // rank classes from darkest to lightest, then give them evenly spaced shades of the tint
-    const grays = [...new Set(state.classes.filter((x) => !x.deleted && HEX.test(x.color || '')).map((x) => x.color))].sort((a, b) => grayOf(a) - grayOf(b));
-    const [h, sat] = rgbToHsl(rgb(backdrop.tint));
-    const map = new Map(grays.map((col, i) => {
-      const l = grays.length > 1 ? 0.34 + (0.38 * i) / (grays.length - 1) : rgbToHsl(rgb(backdrop.tint))[2];
-      const tinted = hslToRgb([h, Math.max(0.35, sat), l]);
-      const k = +backdrop.tintStrength || 0.85;
-      return [col, hexOf(...rgb(col).map((v, j) => v * (1 - k) + tinted[j] * k))];
+    // Your first class (top of the sidebar) gets the main color itself; each next class a darker
+    // shade. If the main color is already very dark, the shades go lighter instead so they show up.
+    const order = state.classes.filter((x) => !x.deleted);
+    const [h, sat, l0] = rgbToHsl(rgb(base));
+    const goLighter = l0 < 0.3;
+    const end = goLighter ? Math.min(0.78, l0 + 0.5) : Math.max(dark ? 0.26 : 0.16, l0 * 0.38);
+    const k = Math.min(1, Math.max(0.3, +backdrop.tintStrength || 1));
+    const map = new Map(order.map((cls, i) => {
+      const l = order.length > 1 ? l0 + ((end - l0) * i) / (order.length - 1) : l0;
+      const shade = hslToRgb([h, sat, l]);
+      const own = HEX.test(cls.color || '') ? cls.color : COLORS[0];
+      return [cls.id, hexOf(...rgb(own).map((v, j) => v * (1 - k) + shade[j] * k))];
     }));
     tintCache = { key, map };
   }
-  return tintCache.map.get(orig) || orig;
+  return tintCache.map.get(c?.id) || orig;
 }
 
 // Recolor the class dots already on screen, so dragging a picker doesn't redraw (and close) it.
@@ -1125,12 +1134,17 @@ function backdropCard() {
       <button data-action="tint-mode" data-on="0" aria-pressed="${!b.tintOn}">Each class's own</button>
       <button data-action="tint-mode" data-on="1" aria-pressed="${!!b.tintOn}">Match to one color</button>
     </div>
-    ${b.tintOn ? `<div class="row">${pick('tint-color', 'Match to', b.tint)}</div>
+    ${b.tintOn ? `<p class="hint">Each class gets a darker shade of the color, from your first class to your last.</p>
+    <div class="seg bd-modes" role="group" aria-label="Shades of">
+      <button data-action="tint-from" data-from="backdrop" aria-pressed="${b.tintFrom === 'backdrop'}" ${backdropMain() ? '' : 'disabled title="Pick a Color or Gradient backdrop first"'}>Backdrop color</button>
+      <button data-action="tint-from" data-from="pick" aria-pressed="${b.tintFrom !== 'backdrop' || !backdropMain()}">Pick a color</button>
+    </div>
+    ${b.tintFrom === 'backdrop' && backdropMain() ? '' : `<div class="row">${pick('tint-color', 'Shades of', b.tint)}</div>`}
     <label class="bd-fade">How close to that color
-      <input type="range" id="tint-strength" min="30" max="100" step="1" value="${Math.round((b.tintStrength || 0.85) * 100)}">
+      <input type="range" id="tint-strength" min="30" max="100" step="1" value="${Math.round((b.tintStrength || 1) * 100)}">
     </label>
     <div class="tint-preview">${classes().slice(0, 8).map((c) => `<span class="chip"><span class="dot" style="background:${classColor(c)}"></span>${esc(c.name)}</span>`).join('')}</div>
-    <p class="hint">Your classes keep their own colors underneath, so you can switch back anytime.</p>` : ''}
+    <p class="hint">Turn the slider down to keep a hint of each class's own color. Your classes keep their own colors underneath, so you can switch back anytime.</p>` : ''}
 
     <h4 class="sub">Text color</h4>
     <div class="row">
@@ -1177,6 +1191,11 @@ function feedCard() {
       <button class="link-btn" data-action="feed-off">Disconnect</button>
     </div>
     <p class="hint">${name} doesn't share what you've turned in, so check things off yourself.${feed.kind === 'schoology' ? ' Anything past its due date stays here as overdue until you do, even if Schoology forgets to list it as missing.' : ''}</p>
+    ${feed.kind === 'schoology' && meta.feedTags?.length ? `<details>
+      <summary class="hint">Tags at the end of your Schoology assignments</summary>
+      <p class="hint">Most of your assignment descriptions end with a tag like these. Only you can see this list.</p>
+      <ul class="hint feed-tags">${meta.feedTags.map((t) => `<li><b>${esc(t.label)}: ${esc(t.code)}</b> (${t.count} assignment${t.count === 1 ? '' : 's'})</li>`).join('')}</ul>
+    </details>` : ''}
     <details ${meta.lastError ? 'open' : ''}>
       <summary class="hint">Use a different ${name} link</summary>
       <ol class="hint">${FEED_HOWTO[feed.kind].steps}</ol>
@@ -1786,6 +1805,7 @@ document.addEventListener('click', async (e) => {
       else (ONE_STYLES[anim.oneStyle] || ONE_STYLES.confetti).run(el.getBoundingClientRect(), CONFETTI[4]);
       break;
     case 'tint-mode': saveBackdrop({ tintOn: el.dataset.on === '1' }); render(); break;
+    case 'tint-from': saveBackdrop({ tintFrom: el.dataset.from }); render(); break;
     case 'rename-open': {
       const f = document.querySelector('[data-form=rename]');
       f.hidden = false; el.closest('.account-name').hidden = true;
@@ -1914,10 +1934,11 @@ document.addEventListener('input', (e) => {
     const stops = [...backdrop.stops];
     stops[+e.target.dataset.i] = e.target.value.toLowerCase();
     saveBackdrop({ stops });
+    refreshClassColors();
     return;
   }
   const colorKey = { 'bd-color': 'color', 'text-color': textKey() }[e.target.id];
-  if (colorKey && HEX.test(e.target.value)) { saveBackdrop({ [colorKey]: e.target.value.toLowerCase() }); return; }
+  if (colorKey && HEX.test(e.target.value)) { saveBackdrop({ [colorKey]: e.target.value.toLowerCase() }); refreshClassColors(); return; }
   if (!e.target.matches('.school-search')) return;
   const q = e.target.value.trim().toLowerCase();
   document.querySelectorAll('.school-btn').forEach((b) => { b.hidden = !!q && !b.textContent.toLowerCase().includes(q); });

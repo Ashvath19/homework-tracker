@@ -124,6 +124,7 @@ async function finishSync(uid, diff, notify) {
   merged.meta = {
     ...fresh.meta, lastSync: Date.now(), lastError: null, lastCount: eventCount,
     ...(diff.lpSeen ? { lpSeen: diff.lpSeen, lpAssign: diff.lpAssign, lpInitialized: true, lpVersion: LP_VERSION } : {}),
+    ...(diff.feedTags ? { feedTags: diff.feedTags } : {}),
   };
   await putState(uid, merged);
 
