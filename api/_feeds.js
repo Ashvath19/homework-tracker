@@ -359,7 +359,14 @@ export function diffWithFeed(kind, state, feed, todayYmd, { classFeeds = [], cla
     feed = { ...feed, events: [...feed.events, ...classFeeds.flatMap((cf) => cf.feed.events)] };
     const hw = feed.events.map(schoologyHomework).filter(Boolean);
     ctx = { classOf, spot: classOf.size ? null : pickClassSpot(hw) };
-    logShape(feed, hw, ctx.spot, { classFeeds: classFeeds.length, mapClasses: classMap.length, matched: hw.filter((h) => classOf.has(sgyId(h))).length });
+    // Compare the bookmark's numbers with the calendar's (ID numbers only: count, lowest, highest).
+    const range = (nums) => { const v = nums.map(Number).filter(Boolean).sort((a, b) => a - b); return v.length ? { n: v.length, min: v[0], max: v[v.length - 1] } : { n: 0 }; };
+    const calIds = hw.map((h) => h.kindM?.[2]).filter(Boolean);
+    logShape(feed, hw, ctx.spot, {
+      classFeeds: classFeeds.length, mapClasses: classMap.length, matched: hw.filter((h) => classOf.has(sgyId(h))).length,
+      ...(classMap.length ? { mapRanges: classMap.map((c) => range(c.ids)), calRange: range(calIds),
+        overlap: calIds.filter((n) => classMap.some((c) => c.ids.includes(n))).length } : {}),
+    });
   }
   const items = new Map();
   for (const ev of feed.events) {
