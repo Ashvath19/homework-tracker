@@ -1169,7 +1169,10 @@ function renderSettings() {
       </div>
     </section>
     ${ONLINE && me ? `<section class="card"><h3>Account</h3>
-      <p>Logged in as <b>${esc(me.name)}</b>. <button class="link-btn" data-action="rename-open">Change name</button></p>
+      <div class="row account-name">
+        <p>Logged in as <b>${esc(me.name)}</b></p>
+        <button class="btn" data-action="rename-open">${PENCIL} Change name</button>
+      </div>
       <form class="row" data-form="rename" hidden>
         <input name="name" class="field" maxlength="40" value="${esc(me.name)}" autocomplete="given-name" aria-label="Your name" required>
         <button class="btn">Save</button>
@@ -1518,7 +1521,7 @@ document.addEventListener('click', async (e) => {
     case 'text-reset': saveBackdrop({ [textKey()]: '' }); render(); break;
     case 'rename-open': {
       const f = document.querySelector('[data-form=rename]');
-      f.hidden = false; el.hidden = true;
+      f.hidden = false; el.closest('.account-name').hidden = true;
       f.name.focus(); f.name.select();
       break;
     }

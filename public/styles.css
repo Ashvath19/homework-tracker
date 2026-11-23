@@ -488,3 +488,6 @@ body.has-bd::after { content: ''; position: fixed; inset: 0; z-index: -1; pointe
 .bd-fade input { width: 100%; max-width: 320px; accent-color: var(--pen); }
 @media (max-width: 420px) { .login-tabs button { padding: 7px 4px; font-size: 12.5px; } }
 .row[hidden] { display: none; }
+.account-name { align-items: center; justify-content: flex-start; gap: 10px 14px; }
+.account-name p { margin: 0; }
+.account-name .btn { display: inline-flex; align-items: center; gap: 6px; }
