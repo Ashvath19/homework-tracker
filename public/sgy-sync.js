@@ -6,7 +6,7 @@
 (async () => {
   const SITE = '__SITE__';
   if (!/(^|\.)schoology\.com$/.test(location.hostname)) {
-    alert('Open Schoology first (any page, while logged in), then tap this bookmark again.');
+    alert('This only works while Schoology is the page in front. Switch to your Schoology tab (any page, while logged in), then tap Sync Homework again from there.');
     return;
   }
   const box = document.createElement('div');

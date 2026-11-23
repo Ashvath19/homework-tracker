@@ -1207,7 +1207,7 @@ function feedCard() {
         <li>Press <b>Copy bookmark code</b>.</li>
         <li>Bookmark any page (on iPhone or iPad: Share, then Add Bookmark), name it <b>Sync Homework</b>, and save.</li>
         <li>Edit that bookmark and replace its address with the copied code.</li>
-        <li>Open Schoology, then tap the <b>Sync Homework</b> bookmark. It takes a few seconds and brings you back here.</li>
+        <li>Go to your Schoology tab so it's the page in front, then tap the <b>Sync Homework</b> bookmark there. It takes a few seconds and brings you back here.</li>
       </ol>
       <div class="row">
         <button class="btn" data-action="sgy-bookmark-copy">Copy bookmark code</button>
