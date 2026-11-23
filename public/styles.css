@@ -478,5 +478,11 @@ body.has-bd::after { content: ''; position: fixed; inset: 0; z-index: -1; pointe
 .color-pick input[type=color] { width: 40px; height: 32px; padding: 2px; border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); cursor: pointer; }
 .color-pick select { width: auto; padding: 6px 8px; }
 .bd-grad { flex-wrap: wrap; gap: 14px; }
+.bd-stops { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 12px; }
+.bd-stop { position: relative; display: inline-flex; }
+.bd-stop input[type=color] { width: 44px; height: 36px; padding: 2px; border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); cursor: pointer; }
+.bd-stop-x { position: absolute; top: -7px; right: -7px; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--rule); background: var(--sheet); color: var(--ink-2); font-size: 13px; line-height: 1; padding: 0; cursor: pointer; display: grid; place-items: center; }
+.bd-stop-x:hover { color: var(--red); border-color: var(--red); }
+.bd-stop-add { padding: 6px 12px; font-size: 13px; }
 .bd-fade { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; font-size: 14px; font-weight: 500; }
 .bd-fade input { width: 100%; max-width: 320px; accent-color: var(--pen); }

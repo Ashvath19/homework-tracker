@@ -752,7 +752,8 @@ const OLD_PRESETS = { // presets from before you could pick your own colors
   peach: ['#ffecd2', '#fcb69f'], forest: ['#134e5e', '#71b280'], night: ['#0f2027', '#2c5364'], graph: ['#e8edf8', '#e8edf8'], dots: ['#efece4', '#efece4'],
 };
 const HEX = /^#[0-9a-f]{6}$/i;
-let backdrop = { mode: 'plain', color: '#8ec5fc', g1: '#a1c4fd', g2: '#fbc2eb', dir: '135', fade: 0.72, textLight: '', textDark: '' };
+const MAX_STOPS = 6;
+let backdrop = { mode: 'plain', color: '#8ec5fc', stops: ['#a1c4fd', '#fbc2eb'], dir: '135', fade: 0.72, textLight: '', textDark: '' };
 // Text color is saved separately for light and dark mode, so dark text picked in the day
 // doesn't vanish when your device switches to dark mode at night.
 const darkMq = window.matchMedia?.('(prefers-color-scheme: dark)');
@@ -762,9 +763,12 @@ try {
   const saved = JSON.parse(safeGet('hw-backdrop') || '{}');
   if (saved.id && !saved.mode) { // old format
     const old = OLD_PRESETS[saved.id];
-    Object.assign(saved, saved.id === 'photo' ? { mode: 'photo' } : old ? { mode: 'gradient', g1: old[0], g2: old[1], dir: '135' } : { mode: 'plain' });
+    Object.assign(saved, saved.id === 'photo' ? { mode: 'photo' } : old ? { mode: 'gradient', stops: old, dir: '135' } : { mode: 'plain' });
   }
-  for (const k of ['color', 'g1', 'g2', 'textLight', 'textDark']) if (saved[k] && !HEX.test(saved[k])) delete saved[k];
+  if (!saved.stops && saved.g1 && saved.g2) saved.stops = [saved.g1, saved.g2]; // two-color version
+  if (saved.stops && !(Array.isArray(saved.stops) && saved.stops.length >= 2 && saved.stops.every((c) => HEX.test(c)))) delete saved.stops;
+  if (saved.stops) saved.stops = saved.stops.slice(0, MAX_STOPS);
+  for (const k of ['color', 'textLight', 'textDark']) if (saved[k] && !HEX.test(saved[k])) delete saved[k];
   backdrop = { ...backdrop, ...saved };
 } catch {}
 
@@ -772,7 +776,7 @@ function backdropCss() {
   const b = backdrop;
   if (b.mode === 'photo') { const photo = safeGet('hw-backdrop-photo'); return photo ? `center / cover no-repeat url("${photo}")` : ''; }
   if (b.mode === 'color') return b.color;
-  if (b.mode === 'gradient') return b.dir === 'radial' ? `radial-gradient(circle at center, ${b.g1}, ${b.g2})` : `linear-gradient(${Number(b.dir) || 135}deg, ${b.g1}, ${b.g2})`;
+  if (b.mode === 'gradient') return b.dir === 'radial' ? `radial-gradient(circle at center, ${b.stops.join(', ')})` : `linear-gradient(${Number(b.dir) || 135}deg, ${b.stops.join(', ')})`;
   return '';
 }
 function applyBackdrop() {
@@ -791,8 +795,8 @@ function applyBackdrop() {
 }
 function saveBackdrop(changes) {
   backdrop = { ...backdrop, ...changes };
-  const { mode, color, g1, g2, dir, fade, textLight, textDark } = backdrop;
-  safeSet('hw-backdrop', JSON.stringify({ mode, color, g1, g2, dir, fade, textLight, textDark }));
+  const { mode, color, stops, dir, fade, textLight, textDark } = backdrop;
+  safeSet('hw-backdrop', JSON.stringify({ mode, color, stops, dir, fade, textLight, textDark }));
   applyBackdrop();
 }
 applyBackdrop();
@@ -808,7 +812,7 @@ function contrast() {
   const paperHex = getComputedStyle(document.documentElement).getPropertyValue('--paper').trim();
   const paper = HEX.test(paperHex) ? rgb(paperHex) : [246, 247, 249];
   const b = backdrop;
-  const under = b.mode === 'color' ? rgb(b.color) : b.mode === 'gradient' ? rgb(b.g1).map((v, i) => (v + rgb(b.g2)[i]) / 2) : paper;
+  const under = b.mode === 'color' ? rgb(b.color) : b.mode === 'gradient' ? [0, 1, 2].map((i) => b.stops.reduce((sum, c) => sum + rgb(c)[i], 0) / b.stops.length) : paper;
   const f = b.mode === 'plain' ? 1 : +b.fade || 0.72;
   const panel = paper.map((v, i) => v * f + under[i] * (1 - f));
   const [x, y] = [lum(rgb(textNow())), lum(panel)].sort((m, n) => n - m);
@@ -828,11 +832,16 @@ function backdropCard() {
       ${Object.entries(modes).map(([id, label]) => `<button data-action="bd-mode" data-mode="${id}" aria-pressed="${b.mode === id}">${label}</button>`).join('')}
     </div>
     ${b.mode === 'color' ? `<div class="row">${pick('bd-color', 'Color', b.color)}</div>` : ''}
-    ${b.mode === 'gradient' ? `<div class="row bd-grad">
-      ${pick('bd-g1', 'First color', b.g1)}
-      ${pick('bd-g2', 'Second color', b.g2)}
+    ${b.mode === 'gradient' ? `<div class="bd-stops">
+      ${b.stops.map((c, i) => `<span class="bd-stop">
+        <input type="color" class="bd-stop-color" data-i="${i}" value="${esc(c)}" aria-label="Color ${i + 1}">
+        ${b.stops.length > 2 ? `<button class="bd-stop-x" data-action="bd-stop-remove" data-i="${i}" aria-label="Remove color ${i + 1}">×</button>` : ''}
+      </span>`).join('')}
+      ${b.stops.length < MAX_STOPS ? `<button class="btn bd-stop-add" data-action="bd-stop-add" aria-label="Add a color">+ Add color</button>` : ''}
+    </div>
+    <div class="row bd-grad">
       <label class="color-pick">Direction <select id="bd-dir" class="field">${Object.entries(GRAD_DIRS).map(([v, n]) => `<option value="${v}" ${String(b.dir) === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-      <button class="link-btn" data-action="bd-swap">Swap colors</button>
+      <button class="link-btn" data-action="bd-swap">Reverse order</button>
     </div>` : ''}
     ${b.mode === 'photo' ? `<div class="row">
       <button class="btn" data-action="bd-upload">${photo ? 'Use a different photo' : 'Choose a photo'}</button>
@@ -1473,7 +1482,15 @@ document.addEventListener('click', async (e) => {
       saveBackdrop({ mode: el.dataset.mode });
       if (el.dataset.mode === 'photo' && !safeGet('hw-backdrop-photo')) $('#bd-file')?.click();
       render(); break;
-    case 'bd-swap': saveBackdrop({ g1: backdrop.g2, g2: backdrop.g1 }); render(); break;
+    case 'bd-swap': saveBackdrop({ stops: [...backdrop.stops].reverse() }); render(); break;
+    case 'bd-stop-add': { // new color: a blend of the last two, so the gradient stays smooth until you change it
+      const [a, z] = backdrop.stops.slice(-2).map(rgb);
+      const mid = '#' + a.map((v, i) => Math.round((v + z[i]) / 2).toString(16).padStart(2, '0')).join('');
+      saveBackdrop({ stops: [...backdrop.stops, mid].slice(0, MAX_STOPS) }); render(); break;
+    }
+    case 'bd-stop-remove':
+      if (backdrop.stops.length > 2) saveBackdrop({ stops: backdrop.stops.filter((_, i) => i !== +el.dataset.i) });
+      render(); break;
     case 'bd-upload': $('#bd-file')?.click(); break;
     case 'bd-photo-off': safeSet('hw-backdrop-photo', null); saveBackdrop({ mode: 'plain' }); render(); break;
     case 'text-reset': saveBackdrop({ [textKey()]: '' }); render(); break;
@@ -1588,7 +1605,13 @@ document.addEventListener('input', (e) => {
   // range 40–95 → panels 95%–40% solid
   if (e.target.id === 'bd-fade') { saveBackdrop({ fade: (135 - +e.target.value) / 100 }); return; }
   // color pickers update live as you drag, without redrawing the page (that would close the picker)
-  const colorKey = { 'bd-color': 'color', 'bd-g1': 'g1', 'bd-g2': 'g2', 'text-color': textKey() }[e.target.id];
+  if (e.target.matches('.bd-stop-color') && HEX.test(e.target.value)) {
+    const stops = [...backdrop.stops];
+    stops[+e.target.dataset.i] = e.target.value.toLowerCase();
+    saveBackdrop({ stops });
+    return;
+  }
+  const colorKey = { 'bd-color': 'color', 'text-color': textKey() }[e.target.id];
   if (colorKey && HEX.test(e.target.value)) { saveBackdrop({ [colorKey]: e.target.value.toLowerCase() }); return; }
   if (!e.target.matches('.school-search')) return;
   const q = e.target.value.trim().toLowerCase();
