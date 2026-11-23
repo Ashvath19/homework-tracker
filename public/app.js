@@ -805,7 +805,7 @@ function applyBackdrop() {
   // of your color), divider lines, borders and hover highlights.
   const mix = (pct, base = 'var(--paper)') => text && `color-mix(in srgb, ${text} ${pct}%, ${base})`;
   for (const [k, v] of Object.entries({
-    '--ink': text, '--ink-2': mix(86), '--ink-3': mix(68), '--rule': mix(26), '--hover': mix(8, 'transparent'),
+    '--ink': text, '--ink-2': mix(86), '--ink-3': mix(68), '--rule': mix(48), '--hover': mix(10, 'transparent'),
   })) {
     if (v) st.setProperty(k, v); else st.removeProperty(k);
   }
