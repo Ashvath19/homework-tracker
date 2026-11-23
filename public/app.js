@@ -1194,7 +1194,7 @@ function feedCard() {
     ${feed.kind === 'schoology' && meta.feedTags?.length ? `<details>
       <summary class="hint">Tags at the end of your Schoology assignments</summary>
       <p class="hint">Most of your assignment descriptions end with a tag like these. Only you can see this list.</p>
-      <ul class="hint feed-tags">${meta.feedTags.map((t) => `<li><b>${esc(t.label)}: ${esc(t.code)}</b> (${t.count} assignment${t.count === 1 ? '' : 's'})</li>`).join('')}</ul>
+      <ul class="hint feed-tags">${meta.feedTags.map((t) => `<li><b>${esc(t.label)}:</b> ${/^https?:\/\//i.test(t.code) ? `<a href="${esc(t.code)}" target="_blank" rel="noopener">${esc(t.code.replace(/^https?:\/\//, '').slice(0, 60))}${t.code.length > 68 ? '…' : ''}</a>` : `<b>${esc(t.code)}</b>`} (${t.count} assignment${t.count === 1 ? '' : 's'})</li>`).join('')}</ul>
     </details>` : ''}
     <details ${meta.lastError ? 'open' : ''}>
       <summary class="hint">Use a different ${name} link</summary>

@@ -186,6 +186,11 @@ const sgyLink = (ev) => {
     || /https:\/\/(?:[a-z0-9-]+\.)?schoology\.com\/[^\s"<>]+/i.exec(desc)?.[0] || '';
   return /^https:\/\/(?:[a-z0-9-]+\.)?schoology\.com\//i.test(url) ? url : '';
 };
+// "… - Word: value" at the very end of a description. The value is often a link.
+const TAG_RE = /[-–]\s*([A-Za-z]{2,12})\s*:\s*(\S[^\n]{0,300}?)\s*$/;
+const descTag = (ev) => TAG_RE.exec(unescape(ev.DESCRIPTION?.value || '').trim());
+// Schoology links anywhere in the description (not just the entry's own link).
+const descLinks = (ev) => unescape(ev.DESCRIPTION?.value || '').match(/https:\/\/(?:[a-z0-9-]+\.)?schoology\.com\/[^\s"<>)]+/gi) || [];
 const clip = (s) => { s = (s || '').replace(/\s+/g, ' ').trim(); return s.length >= 2 && s.length <= 80 ? s : ''; };
 // Every place a class name could be. Each returns { name, title? } (title = the summary without the class part).
 const CLASS_SPOTS = {
@@ -199,7 +204,9 @@ const CLASS_SPOTS = {
   parenSuffix: (ev, sum) => { const m = /^(.+?)\s*\(([^()]{2,60})\)\s*$/.exec(sum); return m ? { name: clip(m[2]), title: m[1] } : null; },
   descFirstLine: (ev) => { const v = clip(unescape(ev.DESCRIPTION?.value || '').split('\n')[0]); return v && !/^https?:/i.test(v) ? { name: v } : null; },
   // "… - Word: CODE" at the very end of the description (a teacher or class tag some schools add)
-  descTag: (ev) => { const m = /[-–]\s*([A-Za-z]{2,12})\s*:\s*([^\n:]{1,30}?)\s*$/.exec(unescape(ev.DESCRIPTION?.value || '').trim()); return m && clip(m[2]) ? { name: clip(m[2]) } : null; },
+  descTag: (ev) => { const m = descTag(ev); return m && !/^https?:/i.test(m[2]) && clip(m[2]) && m[2].length <= 30 ? { name: clip(m[2]) } : null; },
+  // a course or section number in any Schoology link inside the description (like the "- Link: …" tag)
+  descCourseLink: (ev) => { for (const l of descLinks(ev)) { const n = /\/(?:course|section)s?\/(\d+)/i.exec(l)?.[1]; if (n) return { name: `Class ${n}`, id: n }; } return null; },
   descLabel: (ev) => { const v = clip(/^\s*(?:Course|Class|Section)\s*[:\-]\s*(.+)$/im.exec(unescape(ev.DESCRIPTION?.value || ''))?.[1]); return v ? { name: v } : null; },
   descLastLine: (ev) => { const v = clip(unescape(ev.DESCRIPTION?.value || '').trim().split('\n').pop()); return v && !/^https?:/i.test(v) ? { name: v } : null; },
 };
@@ -208,7 +215,8 @@ const CLASS_SPOTS = {
 const numbersIn = (s) => (String(s || '').match(/\d{3,}/g) || []);
 function numberSpots(items) {
   const out = {};
-  for (const [src, get] of [['uid', (ev) => ev.UID?.value], ['link', (ev) => sgyLink(ev).replace(/^https:\/\/[^/]+/, '')]]) {
+  for (const [src, get] of [['uid', (ev) => ev.UID?.value], ['link', (ev) => sgyLink(ev).replace(/^https:\/\/[^/]+/, '')],
+    ['descLink', (ev) => descLinks(ev).filter((l) => l !== sgyLink(ev)).map((l) => l.replace(/^https:\/\/[^/]+/, '')).join(' ')]]) {
     for (let k = 0; k < 4; k++) {
       const vals = items.map((h) => numbersIn(get(h.ev))[k]).filter(Boolean);
       const order = [...new Set(vals)].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
@@ -301,9 +309,15 @@ function logShape(cal, items, spot) {
   // Description lines: count, and masked last lines (where some systems put the class).
   const lines = items.map((h) => unescape(h.ev.DESCRIPTION?.value || '').trim().split('\n'));
   // The trailing "- Word: CODE" tag: how many different codes, and their masked shapes.
-  const tags = items.map((h) => /[-–]\s*([A-Za-z]{2,12})\s*:\s*([^\n:]{1,30}?)\s*$/.exec(unescape(h.ev.DESCRIPTION?.value || '').trim())).filter(Boolean);
-  out.descTag = { found: tags.length, distinctCodes: new Set(tags.map((m) => m[2])).size, distinctWords: new Set(tags.map((m) => m[1])).size,
-    shapes: [...new Set(tags.map((m) => `${mask(m[1])}: ${mask(m[2])}`))].slice(0, 6) };
+  const tags = items.map((h) => descTag(h.ev)).filter(Boolean);
+  // A link's shape: which site, and its path with numbers as N and long IDs as ID. Never the link itself.
+  const linkShape = (u) => { const m = /^https?:\/\/([^/]+)(\/[^?#\s]*)?/i.exec(u) || [];
+    const site = /schoology\.com$/i.test(m[1] || '') ? 'schoology' : /google\.com$/i.test(m[1] || '') ? 'google' : /youtube|youtu\.be/i.test(m[1] || '') ? 'youtube' : 'other';
+    return site + (m[2] || '').replace(/[A-Za-z0-9_-]{20,}/g, 'ID').replace(/\d+/g, 'N').slice(0, 50); };
+  out.descTag = { found: tags.length, distinctValues: new Set(tags.map((m) => m[2])).size,
+    words: tally(tags.map((m) => m[1].toLowerCase())),
+    links: tally(tags.filter((m) => /^https?:/i.test(m[2])).map((m) => linkShape(m[2]))) };
+  out.descLinkShapes = tally(items.flatMap((h) => descLinks(h.ev)).map(linkShape));
   out.descLines = { avg: +(lines.reduce((a, l) => a + l.length, 0) / (lines.length || 1)).toFixed(1),
     lastDistinct: new Set(lines.map((l) => l[l.length - 1])).size, lastSamples: [...new Set(lines.map((l) => mask(l[l.length - 1])))].slice(0, 5) };
   console.log('schoology feed shape', JSON.stringify({ events: cal.events.length, homework: items.length, picked: spot ? { key: spot.key, classes: spot.distinct, coverage: +spot.coverage.toFixed(2) } : null, fields: out }));
@@ -400,7 +414,7 @@ export function diffWithFeed(kind, state, feed, todayYmd) {
     const counts = new Map();
     for (const ev of feed.events) {
       const h = schoologyHomework(ev);
-      const m = h && /[-–]\s*([A-Za-z]{2,12})\s*:\s*([^\n:]{1,30}?)\s*$/.exec(unescape(ev.DESCRIPTION?.value || '').trim());
+      const m = h && descTag(ev);
       if (m) { const k = `${m[1]}\u0000${m[2]}`; counts.set(k, (counts.get(k) || 0) + 1); }
     }
     feedTags = [...counts].sort((a, b) => b[1] - a[1]).slice(0, 20).map(([k, count]) => { const [label, code] = k.split('\u0000'); return { label, code, count }; });
