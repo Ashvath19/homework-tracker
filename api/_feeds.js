@@ -187,17 +187,18 @@ function readCanvas(ev) {
 // Instead of guessing one spot, look at the whole calendar and pick the field that splits the
 // homework into a sensible handful of groups, like real classes would.
 const HOMEWORKISH = /\b(due|hw|homework|assignment|quiz|test|exam|midterm|final|project|essay|lab|read|reading|worksheet|packet|problems?|questions|write|draft|submit|turn in|study|review|presentation|notes)\b/i;
+// Some schools' calendars write links as http://; read those too, as https.
 const sgyLink = (ev) => {
   const desc = unescape(ev.DESCRIPTION?.value || '');
-  const url = (/^https:\/\//i.test(ev.URL?.value || '') ? ev.URL.value.trim() : '')
-    || /https:\/\/(?:[a-z0-9-]+\.)?schoology\.com\/[^\s"<>]+/i.exec(desc)?.[0] || '';
+  const url = ((/^https?:\/\//i.test(ev.URL?.value || '') ? ev.URL.value.trim() : '')
+    || /https?:\/\/(?:[a-z0-9-]+\.)?schoology\.com\/[^\s"<>]+/i.exec(desc)?.[0] || '').replace(/^http:/i, 'https:');
   return /^https:\/\/(?:[a-z0-9-]+\.)?schoology\.com\//i.test(url) ? url : '';
 };
 // "… - Word: value" at the very end of a description. The value is often a link.
 const TAG_RE = /[-–]\s*([A-Za-z]{2,12})\s*:\s*(\S[^\n]{0,300}?)\s*$/;
 const descTag = (ev) => TAG_RE.exec(unescape(ev.DESCRIPTION?.value || '').trim());
 // Schoology links anywhere in the description (not just the entry's own link).
-const descLinks = (ev) => unescape(ev.DESCRIPTION?.value || '').match(/https:\/\/(?:[a-z0-9-]+\.)?schoology\.com\/[^\s"<>)]+/gi) || [];
+const descLinks = (ev) => (unescape(ev.DESCRIPTION?.value || '').match(/https?:\/\/(?:[a-z0-9-]+\.)?schoology\.com\/[^\s"<>)]+/gi) || []).map((l) => l.replace(/^http:/i, 'https:'));
 const clip = (s) => { s = (s || '').replace(/\s+/g, ' ').trim(); return s.length >= 2 && s.length <= 80 ? s : ''; };
 // Every place a class name could be. Each returns { name, title? } (title = the summary without the class part).
 const CLASS_SPOTS = {
@@ -279,6 +280,9 @@ function readSchoology(ev, ctx) {
   const courseNum = /\/(?:course|section)s?\/(\d+)/i.exec(okUrl)?.[1];
   const courseName = spot?.name || '';
   const id = sgyId(h);
+  // Before http:// links were read, entries were saved under a hash of their UID. Remember it so
+  // they move to their real id instead of showing up twice.
+  const legacyId = h.kindM?.[2] ? `u-${shortHash(h.uidRaw || `${summary}|${when.due}`)}` : null;
   const desc = unescape(ev.DESCRIPTION?.value || '').trim();
   return {
     id,
@@ -289,6 +293,7 @@ function readSchoology(ev, ctx) {
     url: okUrl,
     desc: desc.replace(/https:\/\/\S+/g, '').trim().slice(0, 4000),
     tagHint: type === 'assessment' ? 'quiz' : null,
+    legacyId,
   };
 }
 
@@ -404,7 +409,17 @@ export function diffWithFeed(kind, state, feed, todayYmd, { classFeeds = [], cla
   for (const a of items.values()) {
     const id = `${kind}-${a.id}`;
     seen.add(id);
-    const existing = tasks.get(id);
+    let existing = tasks.get(id);
+    let migrated = false;
+    const old = !existing && a.legacyId ? tasks.get(`${kind}-${a.legacyId}`) : null;
+    if (old && !old.deleted) {
+      // Same assignment saved under its old id: move it (checkmark, notes, class and all) to the new id.
+      seen.add(old.id);
+      changedTasks.push({ ...old, deleted: true, updatedAt: now });
+      existing = { ...old, id };
+      tasks.set(id, existing);
+      migrated = true;
+    }
     if (!existing && a.due < from) continue;
     if (a.due >= todayYmd) upcoming++;
 
@@ -431,7 +446,7 @@ export function diffWithFeed(kind, state, feed, todayYmd, { classFeeds = [], cla
       const renamedByYou = existing.title !== existing[titleKey];
       // Sitting in the catch-all class (from before its real class was known)? Move it to its class.
       const move = existing.classId === fallbackId && cls.id !== fallbackId;
-      if (existing.due !== a.due || existing[titleKey] !== a.title || existing.url !== a.url || existing.desc !== a.desc || reopened || move) {
+      if (migrated || existing.due !== a.due || existing[titleKey] !== a.title || existing.url !== a.url || existing.desc !== a.desc || reopened || move) {
         changedTasks.push({
           ...existing, due: a.due, dueAt: a.dueAt, url: a.url, desc: a.desc, [titleKey]: a.title,
           ...(move ? { classId: cls.id } : {}),
