@@ -1572,7 +1572,7 @@ document.addEventListener('click', async (e) => {
     }
     case 'share': {
       const url = location.origin;
-      const text = 'I use this to keep track of homework from Moodle. It sorts everything by due date, has a calendar, and can remind you at 6pm what\'s due tomorrow. VCS students can pull homework straight from Moodle, and anyone else can log their own.';
+      const text = 'I use this to keep track of homework. It sorts everything by due date, has a calendar, and can remind you at 6pm what\'s due tomorrow. It can pull homework straight from Moodle or Canvas, or you can log your own.';
       try {
         if (navigator.share) await navigator.share({ title: 'Homework', text, url });
         else { await navigator.clipboard.writeText(`${text}\n${url}`); toast('Copied. Paste it to a friend.'); }
