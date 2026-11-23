@@ -486,3 +486,4 @@ body.has-bd::after { content: ''; position: fixed; inset: 0; z-index: -1; pointe
 .bd-stop-add { padding: 6px 12px; font-size: 13px; }
 .bd-fade { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; font-size: 14px; font-weight: 500; }
 .bd-fade input { width: 100%; max-width: 320px; accent-color: var(--pen); }
+@media (max-width: 420px) { .login-tabs button { padding: 7px 4px; font-size: 12.5px; } }

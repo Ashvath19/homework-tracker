@@ -1,6 +1,7 @@
 // GET    /api/session → who am I? (+ public push key)
 // DELETE /api/session → log out of this device
 import { currentUser, getProfile, endSession, ymd } from './_lib.js';
+import { feedInfo } from './_feeds.js';
 import { dayLetter, nextClassDay } from './_lessons.js';
 import SCHOOL from './_schoolDays.json' with { type: 'json' };
 
@@ -13,7 +14,7 @@ export default async function handler(req, res) {
       authed: !!p,
       user: p ? {
         id: uid, name: p.name, kind: p.moodle ? 'moodle' : 'own', passkeys: (p.passkeys || []).length,
-        canvas: !p.moodle && p.canvas ? { host: p.canvas.host, name: p.canvas.name || '' } : null,
+        feed: p.moodle ? null : feedInfo(p),
       } : null,
       vapidPublicKey: process.env.VAPID_PUBLIC_KEY || null,
       // VCS's A/B calendar is only for VCS (Moodle) accounts. "Log your own" accounts use their own schedule.

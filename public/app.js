@@ -26,9 +26,25 @@ let tagFilter = null;
 let authed = false;
 let me = null;              // { id, name }
 let moodle = { connected: false };
-let canvas = null;          // { host, name } when a "log your own" account reads a Canvas calendar feed
-const linked = () => moodle.connected || !!canvas;
-const srcName = () => (moodle.connected ? 'Moodle' : 'Canvas');
+let feed = null;            // { kind: 'canvas'|'schoology', label, host, name } when a "log your own" account reads a calendar link
+const linked = () => moodle.connected || !!feed;
+const srcName = () => (moodle.connected ? 'Moodle' : feed?.label || 'Canvas');
+const SOURCE_NAMES = { moodle: 'Moodle', canvas: 'Canvas', schoology: 'Schoology' };
+// How to find the calendar link on each site. Schoology's menu names differ a little between schools.
+const FEED_HOWTO = {
+  canvas: {
+    placeholder: 'https://…instructure.com/feeds/calendars/user_….ics',
+    steps: `<li>Open your school's Canvas website on a computer (not the app), for example <a href="https://esuhsd.instructure.com/calendar" target="_blank" rel="noopener">esuhsd.instructure.com</a>, and go to <b>Calendar</b>.</li>
+      <li>Click <b>Calendar Feed</b> at the bottom right, under the list of calendars.</li>
+      <li>Copy the link it shows and paste it here.</li>`,
+  },
+  schoology: {
+    placeholder: 'https://…schoology.com/calendar/feed/ical/…/ical.ics',
+    steps: `<li>Open your school's Schoology website on a computer (not the app) and go to your <b>Calendar</b>.</li>
+      <li>At the bottom, click <b>Export</b>, then <b>Share Calendar</b>. If you don't see it, look in <b>Account Settings</b> for <b>Share your Schoology calendar</b> and turn it on. The names can be a little different at each school.</li>
+      <li>Copy the iCal link it shows (it ends in <b>ical.ics</b>) and paste it here.</li>`,
+  },
+};
 let meta = {};
 let vapidKey = null;
 let school = null;          // { today, letter: 'A'|'B'|'C'|null, nextA, nextB }
@@ -526,10 +542,10 @@ function render() {
 }
 
 let loginMode = 'key';
-let loginKind = safeGet('hw-login-kind') || 'vcs'; // 'vcs' (Moodle key) | 'canvas' (Canvas feed link) | 'own' (log your own, passkey)
+let loginKind = safeGet('hw-login-kind') || 'vcs'; // 'vcs' (Moodle key) | 'canvas' | 'schoology' (calendar link) | 'own' (log your own, passkey)
 function renderLogin() {
   if (loginKind === 'own' && loginMode !== 'code') return renderOwnLogin();
-  if (loginKind === 'canvas' && loginMode !== 'code') return renderCanvasLogin();
+  if ((loginKind === 'canvas' || loginKind === 'schoology') && loginMode !== 'code') return renderFeedLogin(loginKind);
   const keyForm = `
     <form class="login-form" data-form="login-key">
       <label for="key">Moodle key</label>
@@ -562,7 +578,7 @@ function renderLogin() {
       <input id="code" name="code" class="field code-input" inputmode="numeric" maxlength="7" autocomplete="one-time-code" required>
       <button class="primary">Log in</button>
       <p class="hint">Get a code on a device where you're already logged in, under Settings.</p>
-      <button type="button" class="link-btn switch" data-action="login-mode" data-mode="key">${loginKind === 'own' ? 'Log in with a passkey instead' : loginKind === 'canvas' ? 'Log in with your Canvas link instead' : 'Log in with your Moodle key instead'}</button>
+      <button type="button" class="link-btn switch" data-action="login-mode" data-mode="key">${loginKind === 'own' ? 'Log in with a passkey instead' : FEED_HOWTO[loginKind] ? `Log in with your ${SOURCE_NAMES[loginKind]} link instead` : 'Log in with your Moodle key instead'}</button>
     </form>`;
   $('#main').innerHTML = `
     <div class="login">
@@ -583,38 +599,36 @@ function loginTabs() {
   return `<div class="seg login-tabs" role="tablist">
     <button role="tab" aria-selected="${loginKind === 'vcs'}" data-action="login-kind" data-kind="vcs">Moodle</button>
     <button role="tab" aria-selected="${loginKind === 'canvas'}" data-action="login-kind" data-kind="canvas">Canvas</button>
+    <button role="tab" aria-selected="${loginKind === 'schoology'}" data-action="login-kind" data-kind="schoology">Schoology</button>
     <button role="tab" aria-selected="${loginKind === 'own'}" data-action="login-kind" data-kind="own">Log your own</button>
   </div>`;
 }
-function renderCanvasLogin() {
+function renderFeedLogin(kind) {
+  const name = SOURCE_NAMES[kind];
   $('#main').innerHTML = `
     <div class="login">
       <h1><span class="hl">Homework</span></h1>
-      <p class="lede">Your Canvas assignments, sorted by when they're due.</p>
+      <p class="lede">Your ${name} assignments, sorted by when they're due.</p>
       ${loginTabs()}
       <div class="beta-note">
-        <p><b>Still being tested.</b> It might miss some homework or show the wrong due date. Double-check Canvas for anything important, and ${reportLink('report it on GitHub')} if something's off.</p>
-        <p><b>Your Canvas link works like a password.</b> Anyone with it can see your Canvas calendar and log in here as you, so don't share it. It can't see your grades or messages, or turn anything in.</p>
+        <p><b>Still being tested.</b> It might miss some homework or show the wrong due date. Double-check ${name} for anything important, and ${reportLink('report it on GitHub')} if something's off.</p>
+        <p><b>Your ${name} link works like a password.</b> Anyone with it can see your ${name} calendar and log in here as you, so don't share it. It can't see your grades or messages, or turn anything in.</p>
       </div>
-      <form class="login-form" data-form="login-canvas">
-        <label for="canvas-feed">Canvas calendar link</label>
-        <input id="canvas-feed" name="feed" class="field" placeholder="https://…instructure.com/feeds/calendars/user_….ics" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+      <form class="login-form" data-form="login-feed" data-kind="${kind}">
+        <label for="feed-link">${name} calendar link</label>
+        <input id="feed-link" name="feed" class="field" placeholder="${FEED_HOWTO[kind].placeholder}" autocomplete="off" autocapitalize="off" spellcheck="false" required>
         <button class="primary">Log in</button>
         <details>
           <summary>Where do I find it?</summary>
-          <ol>
-            <li>Open your school's Canvas website on a computer (not the app), for example <a href="https://esuhsd.instructure.com/calendar" target="_blank" rel="noopener">esuhsd.instructure.com</a>, and go to <b>Calendar</b>.</li>
-            <li>Click <b>Calendar Feed</b> at the bottom right, under the list of calendars.</li>
-            <li>Copy the link it shows and paste it here.</li>
-          </ol>
+          <ol>${FEED_HOWTO[kind].steps}</ol>
           The first time, this makes your account. After that, the same link logs you back in.
         </details>
         <details>
           <summary>What can it see?</summary>
           <ul>
-            <li>Only your Canvas calendar: assignment names, due dates and instructions. Canvas doesn't share what you've turned in, so you check things off yourself.</li>
+            <li>Only your ${name} calendar: assignment names, due dates and instructions. ${name} doesn't share what you've turned in, so you check things off yourself${kind === 'schoology' ? `, which also means nothing gets marked done by mistake. Work from the last 2 weeks shows up too, so you can catch anything missing` : ''}.</li>
             <li>It's stored encrypted, and only you can see your homework list here.</li>
-            <li>This site is run by a student, not your school. To cut it off, disconnect Canvas in Settings or delete your account.</li>
+            <li>This site is run by a student, not your school. To cut it off, disconnect ${name} in Settings or delete your account.</li>
           </ul>
         </details>
         <button type="button" class="link-btn switch" data-action="login-mode" data-mode="code">Log in with a code from another device</button>
@@ -703,14 +717,14 @@ function taskRow(t, showClass) {
   const due = dueInfo(t.due);
   const tag = TAGS[t.tag] || TAGS.homework;
   const title = `<span class="tag tag-${t.tag || 'homework'}">${tag.label}</span>${esc(t.title)}`;
-  const meta = (showClass && c) || t.notes || t.doneBy === 'moodle' || t.doneBy === 'canvas' || t.source === 'lesson' || t.files?.length || t.study?.length ? `<span class="task-meta">
+  const meta = (showClass && c) || t.notes || t.doneBy === 'moodle' || t.doneBy === 'canvas' || t.doneBy === 'schoology' || t.source === 'lesson' || t.files?.length || t.study?.length ? `<span class="task-meta">
           ${showClass && c ? `<span class="chip"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}</span>` : ''}
           ${t.source === 'lesson' && !t.done ? `<span title="From the lesson plan for ${esc(t.chapter || '')}">Lesson plan</span>` : ''}
           ${!t.done && (t.study?.length) ? `<span>${t.study.length} study file${t.study.length === 1 ? '' : 's'}</span>` : ''}
           ${!t.done && !t.study?.length && t.files?.length ? `<span>${t.files.length} file${t.files.length === 1 ? '' : 's'}</span>` : ''}
           ${t.notes ? `<span title="${esc(t.notes)}">Has notes</span>` : ''}
           ${t.done && t.doneBy === 'moodle' ? `<span>Submitted on Moodle</span>` : ''}
-          ${t.done && t.doneBy === 'canvas' ? `<span>Removed from Canvas</span>` : ''}
+          ${t.done && (t.doneBy === 'canvas' || t.doneBy === 'schoology') ? `<span>Removed from ${SOURCE_NAMES[t.doneBy]}</span>` : ''}
         </span>` : '';
   return `
     <li class="task ${t.done ? 'done' : ''} ${tag.big ? 'big' : ''}" data-id="${t.id}">
@@ -881,34 +895,31 @@ async function photoToDataUrl(file) {
   } finally { URL.revokeObjectURL(url); }
 }
 
-function canvasCard() {
-  const how = `<ol class="hint">
-      <li>Open your school's Canvas website (not the app), for example <a href="https://esuhsd.instructure.com/calendar" target="_blank" rel="noopener">esuhsd.instructure.com</a>, and go to <b>Calendar</b>.</li>
-      <li>Click <b>Calendar Feed</b> at the bottom right, under the list of calendars.</li>
-      <li>Copy the link it shows and paste it here.</li>
-    </ol>`;
-  const form = (label) => `<form class="row" data-form="canvas">
-      <input name="feed" placeholder="https://…instructure.com/feeds/calendars/user_….ics" autocomplete="off" spellcheck="false" required class="field">
+function feedCard() {
+  const form = (label, placeholder) => `<form class="row" data-form="feed">
+      <input name="feed" placeholder="${placeholder}" autocomplete="off" spellcheck="false" required class="field">
       <button class="btn">${label}</button>
     </form>`;
-  if (!canvas) return `
-    <p>If your school uses Canvas, connect it and your assignments show up here on their own, sorted into classes.</p>
-    ${how}
-    ${form('Connect')}
-    <p class="hint">The link only shows your Canvas calendar. It can't see your grades or messages, or turn anything in. Canvas doesn't share what you've submitted through it, so check things off yourself.</p>`;
+  if (!feed) return `
+    <p>If your school uses Canvas or Schoology, connect it and your assignments show up here on their own, sorted into classes.</p>
+    <details><summary class="hint">Where's my Canvas link?</summary><ol class="hint">${FEED_HOWTO.canvas.steps}</ol></details>
+    <details><summary class="hint">Where's my Schoology link?</summary><ol class="hint">${FEED_HOWTO.schoology.steps}</ol></details>
+    ${form('Connect', 'Paste your Canvas or Schoology calendar link')}
+    <p class="hint">The link only shows your calendar. It can't see your grades or messages, or turn anything in. It also can't tell what you've turned in, so check things off yourself.</p>`;
+  const name = feed.label;
   return `
-    <p>Connected${canvas.name ? ` as <b>${esc(canvas.name)}</b>` : ''} on ${esc(canvas.host)}. ${meta.lastSync ? `Last checked ${ago(meta.lastSync)}${meta.lastCount != null ? `, ${meta.lastCount} upcoming assignment${meta.lastCount === 1 ? '' : 's'}` : ''}.` : 'Not checked yet.'}
+    <p>Connected${feed.name ? ` as <b>${esc(feed.name)}</b>` : ''} on ${esc(feed.host)}. ${meta.lastSync ? `Last checked ${ago(meta.lastSync)}${meta.lastCount != null ? `, ${meta.lastCount} upcoming assignment${meta.lastCount === 1 ? '' : 's'}` : ''}.` : 'Not checked yet.'}
        It checks again every 2 hours on its own.</p>
     ${meta.lastError ? `<p class="bad">${esc(meta.lastError)}</p>` : ''}
     <div class="row">
-      <button class="btn" data-action="sync-now">Check Canvas now</button>
-      <button class="link-btn" data-action="canvas-off">Disconnect</button>
+      <button class="btn" data-action="sync-now">Check ${name} now</button>
+      <button class="link-btn" data-action="feed-off">Disconnect</button>
     </div>
-    <p class="hint">Canvas doesn't share what you've turned in, so check things off yourself.</p>
+    <p class="hint">${name} doesn't share what you've turned in, so check things off yourself.${feed.kind === 'schoology' ? ' Anything past its due date stays here as overdue until you do, even if Schoology forgets to list it as missing.' : ''}</p>
     <details ${meta.lastError ? 'open' : ''}>
-      <summary class="hint">Use a different Canvas link</summary>
-      ${how}
-      ${form('Save link')}
+      <summary class="hint">Use a different ${name} link</summary>
+      <ol class="hint">${FEED_HOWTO[feed.kind].steps}</ol>
+      ${form('Save link', FEED_HOWTO[feed.kind].placeholder)}
     </details>`;
 }
 
@@ -919,7 +930,7 @@ function renderDashboard() {
       <div class="page-header"><h2>Dashboard</h2></div>
       <p class="subtitle">Everything you have due, in date order.</p>
       <div class="empty">
-        <p>${ONLINE && isOwn() && canvas ? 'Nothing from Canvas yet. Your classes show up here as soon as teachers post assignments, or you can add them yourself.' : ONLINE && isOwn() ? 'Add your classes to get started, or connect Canvas in Settings if your school uses it. Then add homework as you get it.' : ONLINE ? 'Nothing from Moodle yet. Your classes show up here as soon as teachers post assignments, or you can add them yourself.' : 'Start by adding your classes.'}</p>
+        <p>${ONLINE && isOwn() && feed ? `Nothing from ${feed.label} yet. Your classes show up here as soon as teachers post assignments, or you can add them yourself.` : ONLINE && isOwn() ? 'Add your classes to get started, or connect Canvas or Schoology in Settings if your school uses one. Then add homework as you get it.' : ONLINE ? 'Nothing from Moodle yet. Your classes show up here as soon as teachers post assignments, or you can add them yourself.' : 'Start by adding your classes.'}</p>
         <div class="row" style="justify-content:center">
           <button class="btn" data-action="new-class">Add a class</button>
         </div>
@@ -1137,7 +1148,7 @@ function renderSettings() {
     <div class="page-header"><h2>Settings</h2></div>
     <section class="card"><h3>Notifications</h3>${notif}</section>
     ${isOwn() ? `<section class="card"><h3>School schedule</h3>${scheduleCard()}</section>
-    ${ONLINE ? `<section class="card"><h3>Canvas</h3>${canvasCard()}</section>` : ''}` : `<section class="card"><h3>Moodle</h3>${moodleCard}</section>`}
+    ${ONLINE ? `<section class="card"><h3>${feed ? feed.label : 'Canvas or Schoology'}</h3>${feedCard()}</section>` : ''}` : `<section class="card"><h3>Moodle</h3>${moodleCard}</section>`}
     <section class="card"><h3>Colors</h3>${backdropCard()}</section>
     <section class="card"><h3>Backup</h3>
       <div class="row">
@@ -1147,7 +1158,7 @@ function renderSettings() {
       <p class="hint">Import adds everything from a backup file to what's already here.</p>
     </section>
     ${ONLINE ? `<section class="card"><h3>Share with a friend</h3>
-      <p>Send a friend the link. VCS students log in with their Moodle key, students at Canvas schools with their Canvas link, and anyone else can log their own homework. Everyone only sees their own list.</p>
+      <p>Send a friend the link. VCS students log in with their Moodle key, students at Canvas or Schoology schools with their calendar link, and anyone else can log their own homework. Everyone only sees their own list.</p>
       <div class="row"><button class="btn" data-action="share">Share the link</button></div>
     </section>` : ''}
     <section class="card"><h3>About</h3>
@@ -1265,7 +1276,7 @@ function openDetail(id) {
       <button class="primary" data-action="detail-done">${t.done ? 'Mark not done' : 'Mark done'}</button>
       <button class="btn" data-action="detail-edit">Edit</button>
       ${t.source === 'moodle' && t.url ? `<a class="link-btn" href="${esc(t.url)}" target="_blank" rel="noopener">Open on Moodle</a>` : ''}
-      ${t.source === 'canvas' && t.url ? `<a class="link-btn" href="${esc(t.url)}" target="_blank" rel="noopener">Open on Canvas</a>` : ''}
+      ${(t.source === 'canvas' || t.source === 'schoology') && t.url ? `<a class="link-btn" href="${esc(t.url)}" target="_blank" rel="noopener">Open on ${SOURCE_NAMES[t.source]}</a>` : ''}
     </div>`;
   $('#detail-dialog').showModal();
 }
@@ -1292,7 +1303,7 @@ function openTaskDialog(id) {
   const link = $('#task-link');
   const href = t.link || t.url;
   link.hidden = !href;
-  if (href) { link.href = href; link.textContent = t.link ? 'Open linked file' : t.source === 'canvas' ? 'Open in Canvas' : 'Open in Moodle'; }
+  if (href) { link.href = href; link.textContent = t.link ? 'Open linked file' : SOURCE_NAMES[t.source] && t.source !== 'moodle' ? `Open in ${SOURCE_NAMES[t.source]}` : 'Open in Moodle'; }
   $('#task-dialog').showModal();
 }
 $('#task-dialog').addEventListener('close', () => {
@@ -1477,9 +1488,9 @@ document.addEventListener('click', async (e) => {
       refreshPushState();
       break;
     }
-    case 'canvas-off': {
-      if (!confirm("Disconnect Canvas? Homework it already added stays, but new assignments won't show up on their own. Your other devices will be logged out.")) break;
-      try { await api('PUT', '/api/account', { canvas: null }); canvas = null; await pull(); toast('Canvas disconnected'); render(); }
+    case 'feed-off': {
+      if (!confirm(`Disconnect ${feed?.label}? Homework it already added stays, but new assignments won't show up on their own. Your other devices will be logged out.`)) break;
+      try { const name = feed?.label; await api('PUT', '/api/account', { feed: null }); feed = null; await pull(); toast(`${name} disconnected`); render(); }
       catch (err) { toast(err.message); }
       break;
     }
@@ -1594,7 +1605,7 @@ document.addEventListener('click', async (e) => {
     }
     case 'share': {
       const url = location.origin;
-      const text = 'I use this to keep track of homework. It sorts everything by due date, has a calendar, and can remind you at 6pm what\'s due tomorrow. It can pull homework straight from Moodle or Canvas, or you can log your own.';
+      const text = 'I use this to keep track of homework. It sorts everything by due date, has a calendar, and can remind you at 6pm what\'s due tomorrow. It can pull homework straight from Moodle, Canvas or Schoology, or you can log your own.';
       try {
         if (navigator.share) await navigator.share({ title: 'Homework', text, url });
         else { await navigator.clipboard.writeText(`${text}\n${url}`); toast('Copied. Paste it to a friend.'); }
@@ -1673,13 +1684,13 @@ document.addEventListener('submit', async (e) => {
     }
     return;
   }
-  if (f.dataset.form === 'login-canvas') {
+  if (f.dataset.form === 'login-feed') {
     e.preventDefault();
     const btn = f.querySelector('button.primary');
     btn.disabled = true;
-    btn.textContent = 'Checking with Canvas…';
+    btn.textContent = `Checking with ${SOURCE_NAMES[f.dataset.kind]}…`;
     try {
-      const r = await api('POST', '/api/login', { canvas: f.feed.value });
+      const r = await api('POST', '/api/login', { feed: f.feed.value, kind: f.dataset.kind });
       if (r.created) justSignedUp = true;
       await boot(true);
     } catch (err) {
@@ -1729,17 +1740,17 @@ document.addEventListener('submit', async (e) => {
     } catch (err) { toast(err.message); }
     return;
   }
-  if (f.dataset.form === 'canvas') {
+  if (f.dataset.form === 'feed') {
     e.preventDefault();
     const btn = f.querySelector('button');
     const label = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Checking…';
     try {
-      const r = await api('PUT', '/api/account', { canvas: f.feed.value });
-      canvas = r.canvas;
+      const r = await api('PUT', '/api/account', { feed: f.feed.value });
+      feed = r.feed;
       await pull();
-      toast(r.added ? `Connected. Found ${r.added} assignment${r.added === 1 ? '' : 's'}.` : 'Connected to Canvas');
+      toast(r.added ? `Connected. Found ${r.added} assignment${r.added === 1 ? '' : 's'}.` : `Connected to ${feed?.label}`);
       render();
     } catch (err) {
       toast(err.message);
@@ -1858,7 +1869,7 @@ async function boot(again = false) {
     school = s.school || null;
     schedule = s.schedule || null;
     moodle = me?.kind === 'moodle' ? { connected: true, name: me.name } : { connected: false };
-    canvas = me?.canvas || null;
+    feed = me?.feed || null;
   } catch {
     return; // offline — keep showing the cached copy
   }

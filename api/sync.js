@@ -8,7 +8,7 @@ import {
   decrypt, sendPush, ymd, addDays, dueLabel, TZ,
 } from './_lib.js';
 import { diffWithMoodle } from './_moodle.js';
-import { fetchFeed, diffWithCanvas } from './_canvas.js';
+import { fetchFeed, diffWithFeed, feedKinds, FEEDS } from './_feeds.js';
 import { diffLessonPlans, LP_VERSION } from './_lessons.js';
 
 const ICONS = { homework: '📄', reading: '📖', essay: '✍️', lab: '🧪', project: '🛠️', quiz: '❓', test: '🚨' };
@@ -67,7 +67,8 @@ export default async function handler(req, res) {
 
 export async function syncUser(uid, { notify }) {
   const profile = await getProfile(uid);
-  if (profile?.canvas?.feedEnc && !profile.moodle) return finishSync(uid, await canvasDiff(uid, profile), notify);
+  const feedKind = !profile?.moodle && feedKinds.find((k) => profile?.[k]?.feedEnc);
+  if (feedKind) return finishSync(uid, await feedDiff(uid, profile, feedKind), notify);
   if (!profile?.moodle?.tokenEnc) return { skipped: 'nothing to check' };
   const token = decrypt(profile.moodle.tokenEnc);
 
@@ -98,14 +99,15 @@ export async function syncUser(uid, { notify }) {
   return finishSync(uid, diff, notify);
 }
 
-// "Log your own" accounts connected to Canvas: read their calendar feed.
-async function canvasDiff(uid, profile) {
+// "Log your own" accounts connected to Canvas or Schoology: read their calendar link.
+async function feedDiff(uid, profile, kind) {
+  const label = FEEDS[kind].name;
   try {
-    const feed = await fetchFeed(decrypt(profile.canvas.feedEnc));
-    return diffWithCanvas(await getState(uid), feed, ymd(new Date()));
+    const feed = await fetchFeed(kind, decrypt(profile[kind].feedEnc));
+    return diffWithFeed(kind, await getState(uid), feed, ymd(new Date()));
   } catch (e) {
     const s = await getState(uid);
-    const msg = /stopped working|bad feed/i.test(e.message) ? 'Your Canvas link stopped working. Paste a new one in Settings.' : `Couldn't reach Canvas: ${e.message}`;
+    const msg = /stopped working|bad feed/i.test(e.message) ? `Your ${label} link stopped working. Paste a new one in Settings.` : `Couldn't reach ${label}: ${e.message}`;
     s.meta = { ...s.meta, lastError: msg, lastErrorAt: Date.now() };
     await putState(uid, s);
     throw e;

@@ -18,7 +18,7 @@ export const K = {
   link: (c) => `hw:link:${c}`,               // 6-digit phone login code → user id
   cred: (id) => `hw:cred:${id}`,             // passkey id → user id
   pkTicket: (t) => `hw:pk:${t}`,             // passkey challenge, between the two steps (5 min)
-  canvas: (fp) => `hw:canvas:${fp}`,         // Canvas feed link fingerprint → user id (logging in with Canvas)
+  feed: (kind, fp) => `hw:${kind}:${fp}`,    // Canvas/Schoology calendar link fingerprint → user id (logging in with it)
 };
 export const TZ = process.env.TIMEZONE || 'America/Los_Angeles';
 export const COLORS = ['#e5484d', '#f76b15', '#e2a336', '#30a46c', '#12a594', '#0090ff', '#8e4ec6', '#d6409f'];
@@ -61,7 +61,7 @@ export async function saveProfile(uid, p) {
 export async function deleteUser(uid) {
   const p = await getProfile(uid);
   for (const c of p?.passkeys || []) await redis.del(K.cred(c.id));
-  if (p?.canvas?.fp) await redis.del(K.canvas(p.canvas.fp));
+  for (const kind of ['canvas', 'schoology']) if (p?.[kind]?.fp) await redis.del(K.feed(kind, p[kind].fp));
   await redis.del(K.profile(uid), K.state(uid), K.subs(uid));
   await redis.srem(K.users, uid);
 }
