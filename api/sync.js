@@ -104,7 +104,12 @@ async function feedDiff(uid, profile, kind) {
   const label = FEEDS[kind].name;
   try {
     const feed = await fetchFeed(kind, decrypt(profile[kind].feedEnc));
-    return diffWithFeed(kind, await getState(uid), feed, ymd(new Date()));
+    // Schoology class calendars: a class whose link stops working just isn't used this time.
+    const classes = kind === 'schoology' ? profile.schoologyClasses || [] : [];
+    const got = await Promise.allSettled(classes.map(async (c) => ({ key: c.key, name: c.name, feed: await fetchFeed('schoology', decrypt(c.feedEnc)) })));
+    const classFeeds = got.filter((g) => g.status === 'fulfilled').map((g) => g.value);
+    if (got.length > classFeeds.length) console.warn('schoology class calendars failed', got.length - classFeeds.length);
+    return diffWithFeed(kind, await getState(uid), feed, ymd(new Date()), { classFeeds });
   } catch (e) {
     const s = await getState(uid);
     const msg = /stopped working|bad feed/i.test(e.message) ? `Your ${label} link stopped working. Paste a new one in Settings.` : `Couldn't reach ${label}: ${e.message}`;

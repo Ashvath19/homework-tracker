@@ -1191,6 +1191,13 @@ function feedCard() {
       <button class="link-btn" data-action="feed-off">Disconnect</button>
     </div>
     <p class="hint">${name} doesn't share what you've turned in, so check things off yourself.${feed.kind === 'schoology' ? ' Anything past its due date stays here as overdue until you do, even if Schoology forgets to list it as missing.' : ''}</p>
+    ${feed.kind === 'schoology' ? `<h4 class="sub">Class calendars</h4>
+      <p class="hint">Schoology's main calendar doesn't say which class anything is for, but each class has its own calendar. In Schoology, open <b>Calendar</b>, pick one class's calendar, use its <b>Export</b>, and copy the link ending in <b>.ics</b>. Add each class once and homework gets sorted into it.</p>
+      ${(feed.classes || []).length ? `<ul class="sgy-classes">${feed.classes.map((c) => `<li><span>${esc(c.name)}</span><button class="link-btn" data-action="sgy-class-remove" data-key="${esc(c.key)}">Remove</button></li>`).join('')}</ul>` : ''}
+      ${(feed.classes || []).length < 15 ? `<form class="row" data-form="sgy-class">
+        <input name="link" placeholder="Paste a class calendar link (.ics)" autocomplete="off" spellcheck="false" required class="field">
+        <button class="btn">Add class</button>
+      </form>` : ''}` : ''}
     ${feed.kind === 'schoology' && meta.feedTags?.length ? `<details>
       <summary class="hint">Tags at the end of your Schoology assignments</summary>
       <p class="hint">Most of your assignment descriptions end with a tag like these. Only you can see this list.</p>
@@ -1777,6 +1784,12 @@ document.addEventListener('click', async (e) => {
       refreshPushState();
       break;
     }
+    case 'sgy-class-remove': {
+      if (!confirm("Remove this class calendar? Homework already sorted stays in its class.")) break;
+      try { const r = await api('PUT', '/api/account', { sgyClassRemove: el.dataset.key }); feed = r.feed; toast('Removed'); render(); }
+      catch (err) { toast(err.message); }
+      break;
+    }
     case 'feed-off': {
       if (!confirm(`Disconnect ${feed?.label}? Homework it already added stays, but new assignments won't show up on their own. Your other devices will be logged out.`)) break;
       try { const name = feed?.label; await api('PUT', '/api/account', { feed: null }); feed = null; await pull(); toast(`${name} disconnected`); render(); }
@@ -2062,6 +2075,19 @@ document.addEventListener('submit', async (e) => {
       toast('Schedule saved');
       location.hash = '#/';
     } catch (err) { toast(err.message); }
+    return;
+  }
+  if (f.dataset.form === 'sgy-class') {
+    e.preventDefault();
+    const btn = f.querySelector('button');
+    btn.disabled = true; btn.textContent = 'Checking…';
+    try {
+      const r = await api('PUT', '/api/account', { sgyClass: f.link.value });
+      feed = r.feed;
+      await pull();
+      toast(`Added ${feed.classes?.[feed.classes.length - 1]?.name || 'class'}`);
+      render();
+    } catch (err) { toast(err.message); btn.disabled = false; btn.textContent = 'Add class'; }
     return;
   }
   if (f.dataset.form === 'feed') {

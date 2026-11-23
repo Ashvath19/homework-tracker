@@ -3,9 +3,9 @@
 // PUT    /api/account { feed: link | null } → connect (or disconnect) a Canvas or Schoology calendar link
 // DELETE /api/account → permanently delete your account and all your data
 import crypto from 'node:crypto';
-import { redis, K, requireUser, deleteUser, endSession, startSession, sessionFp, getProfile, saveProfile, getState, putState, tooManyFailures } from './_lib.js';
+import { redis, K, requireUser, deleteUser, endSession, startSession, sessionFp, getProfile, saveProfile, getState, putState, tooManyFailures, encrypt, fingerprint } from './_lib.js';
 import { cleanName } from './_passkey.js';
-import { connectFeed, feedKindOf, feedKinds, FEEDS, feedInfo } from './_feeds.js';
+import { connectFeed, feedKindOf, feedKinds, FEEDS, feedInfo, cleanFeedUrl, fetchFeed } from './_feeds.js';
 import { syncUser } from './sync.js';
 
 export default async function handler(req, res) {
@@ -31,6 +31,34 @@ export default async function handler(req, res) {
       const s = cleanSchedule(body.schedule);
       if (!s) return res.status(400).json({ error: "That schedule doesn't look right." });
       p.schedule = s;
+    }
+    // Schoology class calendars: { sgyClass: link, name? } adds one; { sgyClassRemove: key } removes one.
+    if (body.sgyClass !== undefined || body.sgyClassRemove !== undefined) {
+      if (!p.schoology) return res.status(400).json({ error: 'Connect your Schoology calendar first.' });
+      const list = p.schoologyClasses || [];
+      if (body.sgyClassRemove !== undefined) {
+        p.schoologyClasses = list.filter((c) => c.key !== String(body.sgyClassRemove));
+      } else {
+        const limit = await tooManyFailures(req, 'canvas', 20);
+        if (limit.blocked) return res.status(429).json({ error: 'Too many tries. Wait an hour and try again.' });
+        const link = cleanFeedUrl('schoology', body.sgyClass);
+        if (!link) { await limit.record(); return res.status(400).json({ error: "That isn't a Schoology calendar link. Copy it from the class calendar's Export in Schoology; it ends in .ics." }); }
+        const key = fingerprint(link.url).slice(0, 12);
+        if (key === p.schoology.fp?.slice(0, 12)) return res.status(400).json({ error: "That's your main Schoology calendar. Use a single class's calendar link here." });
+        if (list.some((c) => c.key === key)) return res.status(400).json({ error: 'That class calendar is already added.' });
+        if (list.length >= 15) return res.status(400).json({ error: 'You can add up to 15 class calendars.' });
+        let cal;
+        try { cal = await fetchFeed('schoology', link.url); } catch {
+          await limit.record();
+          return res.status(400).json({ error: "Schoology didn't accept that link. Copy it again from the class calendar's Export." });
+        }
+        const name = cleanName(body.name) || cal.name || `Class ${list.length + 1}`;
+        p.schoologyClasses = [...list, { key, name, feedEnc: encrypt(link.url), addedAt: Date.now() }];
+      }
+      await saveProfile(uid, p);
+      let sync = {};
+      try { sync = await syncUser(uid, { notify: false }); } catch (e) { sync = { syncError: e.message }; }
+      return res.json({ ok: true, feed: feedInfo(p), ...sync });
     }
     const feedLink = body.feed !== undefined ? body.feed : body.canvas;
     if (feedLink !== undefined) {

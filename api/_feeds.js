@@ -17,7 +17,8 @@ export const FEEDS = {
   },
   schoology: {
     name: 'Schoology',
-    url: /^https:\/\/((?:[a-z0-9-]{2,63}\.)?schoology\.com)\/calendar\/feed\/ical\/\d{1,20}\/[A-Za-z0-9]{10,80}\/ical\.ics$/,
+    // The personal calendar link and each class calendar's export link (formats differ a little).
+    url: /^https:\/\/((?:[a-z0-9-]{2,63}\.)?schoology\.com)\/(?=[^?#]*(?:ical|calendar))[A-Za-z0-9_\/.%-]{5,250}\.ics$/,
     // Schoology's own "overdue" list is unreliable, which is the point of using this, so also
     // bring in the last 2 weeks: anything still not done shows up as overdue until you check it off.
     backDays: 14,
@@ -28,12 +29,15 @@ const feedLabel = (kind) => FEEDS[kind]?.name || 'calendar';
 // What the app shows about a connected link (never the link itself).
 export function feedInfo(p) {
   const kind = feedKinds.find((k) => p?.[k]);
-  return kind ? { kind, label: feedLabel(kind), host: p[kind].host, name: p[kind].name || '' } : null;
+  return kind ? {
+    kind, label: feedLabel(kind), host: p[kind].host, name: p[kind].name || '',
+    ...(kind === 'schoology' ? { classes: (p.schoologyClasses || []).map(({ key, name }) => ({ key, name })) } : {}),
+  } : null;
 }
 
 export function cleanFeedUrl(kind, raw) {
   const url = String(raw || '').trim().replace(/^webcals?:\/\//i, 'https://').replace(/^http:\/\//i, 'https://');
-  const m = FEEDS[kind]?.url.exec(url);
+  const m = !url.includes('..') && FEEDS[kind]?.url.exec(url);
   return m ? { url, host: m[1] } : null;
 }
 // Which kind of link is this? (so pasting a Schoology link in the Canvas box still works)
@@ -260,14 +264,18 @@ export function pickClassSpot(items) {
   return best;
 }
 
+const sgyId = (h) => (h.kindM?.[2] ? `${h.type}-${h.kindM[2]}` : `u-${shortHash(h.uidRaw || `${h.summary}|${h.when.due}`)}`);
+
 function readSchoology(ev, ctx) {
   const h = schoologyHomework(ev);
   if (!h) return null;
-  const { when, summary, okUrl, type, kindM, uidRaw } = h;
-  const spot = ctx?.spot?.fn(ev, summary) || CLASS_SPOTS.bracket(ev, summary);
+  const { when, summary, okUrl, type } = h;
+  // A class calendar the student added says exactly which class this is.
+  const known = ctx?.classOf?.get(sgyId(h));
+  const spot = known || ctx?.spot?.fn(ev, summary) || CLASS_SPOTS.bracket(ev, summary);
   const courseNum = /\/(?:course|section)s?\/(\d+)/i.exec(okUrl)?.[1];
   const courseName = spot?.name || '';
-  const id = kindM?.[2] ? `${type}-${kindM[2]}` : `u-${shortHash(uidRaw || `${summary}|${when.due}`)}`;
+  const id = sgyId(h);
   const desc = unescape(ev.DESCRIPTION?.value || '').trim();
   return {
     id,
@@ -286,7 +294,7 @@ function readSchoology(ev, ctx) {
 // every letter becomes a/A and every digit 9 ("Aaaa 9: Aaaa aaa"). Never names, titles or links.
 const mask = (s) => String(s || '').replace(/https?:\/\/\S+/g, 'LINK').replace(/[A-Z]/g, 'A').replace(/[a-z]/g, 'a')
   .replace(/\d/g, '9').replace(/a{3,}/g, 'aa').replace(/A{3,}/g, 'AA').replace(/9{3,}/g, '99').slice(0, 60);
-function logShape(cal, items, spot) {
+function logShape(cal, items, spot, extra = {}) {
   const fields = {};
   for (const ev of cal.events.slice(0, 400)) {
     for (const [k, f] of Object.entries(ev)) {
@@ -320,19 +328,29 @@ function logShape(cal, items, spot) {
   out.descLinkShapes = tally(items.flatMap((h) => descLinks(h.ev)).map(linkShape));
   out.descLines = { avg: +(lines.reduce((a, l) => a + l.length, 0) / (lines.length || 1)).toFixed(1),
     lastDistinct: new Set(lines.map((l) => l[l.length - 1])).size, lastSamples: [...new Set(lines.map((l) => mask(l[l.length - 1])))].slice(0, 5) };
-  console.log('schoology feed shape', JSON.stringify({ events: cal.events.length, homework: items.length, picked: spot ? { key: spot.key, classes: spot.distinct, coverage: +spot.coverage.toFixed(2) } : null, fields: out }));
+  console.log('schoology feed shape', JSON.stringify({ ...extra, events: cal.events.length, homework: items.length, picked: spot ? { key: spot.key, classes: spot.distinct, coverage: +spot.coverage.toFixed(2) } : null, fields: out }));
 }
 
 const READERS = { canvas: readCanvas, schoology: readSchoology };
 
 // Compares the feed with our saved state and returns only the items that changed.
-export function diffWithFeed(kind, state, feed, todayYmd) {
+// classFeeds (Schoology): [{ key, name, feed }] — one calendar per class, added by the student.
+export function diffWithFeed(kind, state, feed, todayYmd, { classFeeds = [] } = {}) {
   const now = Date.now();
   let ctx = null;
   if (kind === 'schoology') {
+    const classOf = new Map();
+    for (const cf of classFeeds) {
+      for (const ev of cf.feed.events) {
+        const h = schoologyHomework(ev);
+        if (h) classOf.set(sgyId(h), { name: cf.name, id: `cal-${cf.key}` });
+      }
+    }
+    // Class calendars may also hold homework the main calendar doesn't; read those too.
+    feed = { ...feed, events: [...feed.events, ...classFeeds.flatMap((cf) => cf.feed.events)] };
     const hw = feed.events.map(schoologyHomework).filter(Boolean);
-    ctx = { spot: pickClassSpot(hw) };
-    logShape(feed, hw, ctx.spot);
+    ctx = { classOf, spot: classOf.size ? null : pickClassSpot(hw) };
+    logShape(feed, hw, ctx.spot, { classFeeds: classFeeds.length, matched: hw.filter((h) => classOf.has(sgyId(h))).length });
   }
   const items = new Map();
   for (const ev of feed.events) {

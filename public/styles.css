@@ -516,3 +516,5 @@ body.has-bd::after { content: ''; position: fixed; inset: 0; z-index: -1; pointe
 .anim-style { margin-left: 28px; }
 .anim-style select { width: auto; padding: 6px 8px; }
 #class-dialog .class-color { display: inline-flex; flex-direction: row; align-items: center; gap: 10px; margin: 0; font-weight: 400; }
+.sgy-classes { list-style: none; padding: 0; margin: 0 0 10px; }
+.sgy-classes li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--rule); }
