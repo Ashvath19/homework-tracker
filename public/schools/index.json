@@ -1,5 +1,5 @@
 {
- "note": "Built by scripts/build-schools.py. One school year per file; rebuild every summer. VCS uses api/_schoolDays.json instead.",
+ "note": "Built by scripts/build-schools.py. One school year per file; rebuild every summer. VCS Moodle accounts use api/_schoolDays.json; vchs/vcjh are built from it.",
  "schools": [
   {
    "id": "andrew-hill",
@@ -154,6 +154,18 @@
   {
    "id": "silver-creek",
    "name": "Silver Creek High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "vchs",
+   "name": "Valley Christian High School",
+   "place": "San Jose",
+   "needs": null
+  },
+  {
+   "id": "vcjh",
+   "name": "Valley Christian Junior High",
    "place": "San Jose",
    "needs": "pattern"
   },

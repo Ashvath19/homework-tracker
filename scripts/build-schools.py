@@ -138,6 +138,21 @@ MITTY = dict(first='2026-08-18', last='2027-05-26', src='https://www.mitty.com/a
            ('2027-03-29', '2027-04-02'), '2027-04-21', '2027-04-26'))
 school('mitty', 'Archbishop Mitty High School', 'San Jose', MITTY, None, [])
 
+# ---- Valley Christian (same campus calendar VCS Moodle accounts use: api/_schoolDays.json) ----
+# The A/B days there alternate over school days, skipping days off and C days, so a rotation
+# anchored on the first day reproduces every letter exactly (checked below).
+VCS_DAYS = json.load(open(os.path.join(os.path.dirname(__file__), '..', 'api', '_schoolDays.json')))['days']
+VCS = dict(first=min(VCS_DAYS), last=max(VCS_DAYS), src='https://www.vcs.net',
+  off=[d for d in rng(min(VCS_DAYS), max(VCS_DAYS)) if d not in VCS_DAYS])
+VCS_C = {d: {'label': 'C', 'note': 'C day (special schedule)'} for d, v in VCS_DAYS.items() if v == 'C'}
+school('vchs', 'Valley Christian High School', 'San Jose', VCS, {'type': 'rotation', 'labels': ['A', 'B'], 'anchor': min(VCS_DAYS)},
+  ['Learn@VCS: VCHS Campus Calendar 2026-27'], classDays=['A', 'B'],
+  labelNames={'A': 'A day', 'B': 'B day', 'C': 'C day'}, special=VCS_C)
+_ab = [v for d, v in sorted(VCS_DAYS.items()) if v != 'C']
+assert all(v == 'AB'[i % 2] for i, v in enumerate(_ab)), 'VCHS A/B days no longer alternate; use per-day letters'
+# The junior high shares the campus calendar, but its weekly schedule isn't published, so students set it.
+school('vcjh', 'Valley Christian Junior High', 'San Jose', VCS, None, ['Learn@VCS: VCHS Campus Calendar 2026-27'])
+
 out = os.path.join(os.path.dirname(__file__), '..', 'public', 'schools')
 index = []
 for s in schools:
@@ -149,6 +164,6 @@ for s in schools:
     index.append({'id': s['id'], 'name': s['name'], 'place': s['place'], 'needs': 'pattern' if s['pattern'] is None else
                   'today' if s['pattern']['type'] == 'rotation' and 'anchor' not in s['pattern'] else None})
 index.sort(key=lambda x: x['name'])
-json.dump({'note': 'Built by scripts/build-schools.py. One school year per file; rebuild every summer. VCS uses api/_schoolDays.json instead.',
+json.dump({'note': 'Built by scripts/build-schools.py. One school year per file; rebuild every summer. VCS Moodle accounts use api/_schoolDays.json; vchs/vcjh are built from it.',
            'schools': index}, open(os.path.join(out, 'index.json'), 'w'), indent=1)
 print(len(schools), 'schools')
