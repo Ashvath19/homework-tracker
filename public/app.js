@@ -475,6 +475,84 @@ const tasks = () => live(state.tasks);
 const classById = (id) => state.classes.find((c) => c.id === id && !c.deleted);
 const pending = () => tasks().filter((t) => !t.done && classById(t.classId));
 
+// ---------- celebrations (Settings > Animations; saved on this device) ----------
+let anim = { one: true, day: true };
+try { anim = { ...anim, ...JSON.parse(safeGet('hw-anim') || '{}') }; } catch {}
+const reducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+const CONFETTI = ['#ffd166', '#ef476f', '#06d6a0', '#118ab2', '#8b5cf6', '#f78c6b'];
+
+// Call right after checking something off. rect = where the checkbox/button was (before the redraw).
+function celebrate(t, rect) {
+  if (!t?.done) return;
+  const sameDay = t.due ? tasks().filter((x) => x.due === t.due && classById(x.classId)) : [];
+  if (anim.day && sameDay.length >= 2 && sameDay.every((x) => x.done)) return celebrateDay(t.due);
+  if (!anim.one) return;
+  popCheck(t.id);
+  if (!reducedMotion() && rect) burst(rect, classColor(classById(t.classId)));
+}
+function popCheck(id) {
+  requestAnimationFrame(() => {
+    const box = document.querySelector(`.task[data-id="${CSS.escape(id)}"] input[type=checkbox]`);
+    if (box) { box.classList.remove('pop'); void box.offsetWidth; box.classList.add('pop'); }
+  });
+}
+function confettiLayer() {
+  const layer = document.createElement('div');
+  layer.className = 'confetti';
+  layer.setAttribute('aria-hidden', 'true');
+  document.body.append(layer);
+  return layer;
+}
+// A small burst from one spot.
+function burst(rect, color) {
+  const layer = confettiLayer();
+  const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+  for (let i = 0; i < 16; i++) {
+    const p = document.createElement('i');
+    p.style.left = `${x}px`; p.style.top = `${y}px`;
+    p.style.background = i % 3 === 0 ? color : CONFETTI[i % CONFETTI.length];
+    layer.append(p);
+    const a = (Math.PI * 2 * i) / 16 + Math.random() * 0.4, d = 34 + Math.random() * 30;
+    p.animate([
+      { transform: 'translate(-50%, -50%) scale(1) rotate(0deg)', opacity: 1 },
+      { transform: `translate(calc(-50% + ${Math.cos(a) * d}px), calc(-50% + ${Math.sin(a) * d + 18}px)) scale(.6) rotate(${200 + Math.random() * 300}deg)`, opacity: 0 },
+    ], { duration: 650 + Math.random() * 200, easing: 'cubic-bezier(.2,.7,.4,1)', fill: 'forwards' });
+  }
+  setTimeout(() => layer.remove(), 1000);
+}
+// Everything due on a day is done: confetti across the whole screen, plus a message.
+function celebrateDay(due) {
+  const today = dateStr(new Date());
+  const name = due === today ? 'today' : due === tomorrow() ? 'tomorrow'
+    : new Date(`${due}T12:00`).toLocaleDateString('en-US', { weekday: 'long', ...(due < today || due > addDaysStr(today, 6) ? { month: 'short', day: 'numeric' } : {}) });
+  toast(`All done for ${name}! 🎉`);
+  if (reducedMotion()) return;
+  const layer = confettiLayer();
+  const w = window.innerWidth, h = window.innerHeight;
+  for (let i = 0; i < 90; i++) {
+    const p = document.createElement('i');
+    p.className = i % 4 === 0 ? 'strip' : '';
+    p.style.left = `${Math.random() * w}px`; p.style.top = '-12px';
+    p.style.background = CONFETTI[i % CONFETTI.length];
+    layer.append(p);
+    const drift = (Math.random() - 0.5) * 160;
+    p.animate([
+      { transform: 'translate(0, 0) rotate(0deg)', opacity: 1 },
+      { transform: `translate(${drift}px, ${h * 0.6}px) rotate(${360 + Math.random() * 360}deg)`, opacity: 1, offset: 0.75 },
+      { transform: `translate(${drift * 1.3}px, ${h + 30}px) rotate(${540 + Math.random() * 360}deg)`, opacity: 0 },
+    ], { duration: 1600 + Math.random() * 1200, delay: Math.random() * 400, easing: 'cubic-bezier(.25,.6,.5,1)', fill: 'forwards' });
+  }
+  setTimeout(() => layer.remove(), 3400);
+}
+function animationsCard() {
+  const row = (key, label, hint) => `<label class="check-row"><input type="checkbox" data-anim="${key}" ${anim[key] ? 'checked' : ''}>
+      <span><b>${label}</b><small>${hint}</small></span></label>`;
+  return `${row('one', 'When you finish an assignment', 'The checkbox pops and a little confetti flies out.')}
+    ${row('day', 'When you finish everything due on a day', 'Confetti across the screen and an "All done" message.')}
+    <div class="row"><button class="link-btn" data-action="anim-try">Try them</button></div>
+    <p class="hint">Saved on this device only.${reducedMotion() ? ' Your device is set to reduce motion, so you\'ll see the message without the confetti.' : ''}</p>`;
+}
+
 function dateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
@@ -1214,6 +1292,7 @@ function renderSettings() {
     ${isOwn() ? `<section class="card"><h3>School schedule</h3>${scheduleCard()}</section>
     ${ONLINE ? `<section class="card"><h3>${feed ? feed.label : 'Canvas or Schoology'}</h3>${feedCard()}</section>` : ''}` : `<section class="card"><h3>Moodle</h3>${moodleCard}</section>`}
     <section class="card"><h3>Colors</h3>${backdropCard()}</section>
+    <section class="card"><h3>Animations</h3>${animationsCard()}</section>
     <section class="card"><h3>Backup</h3>
       <div class="row">
         <button class="btn" data-action="export">Export backup</button>
@@ -1475,9 +1554,10 @@ document.addEventListener('click', async (e) => {
         t.doneAt = t.done ? Date.now() : null;
         t.doneBy = t.done ? 'you' : null;
         touch(t);
+        const rect = el.getBoundingClientRect();
         $('#detail-dialog').close();
         commit();
-        if (t.done) toast('Marked done');
+        if (t.done) { toast('Marked done'); celebrate(t, rect); }
       }
       break;
     }
@@ -1581,6 +1661,13 @@ document.addEventListener('click', async (e) => {
     case 'bd-upload': $('#bd-file')?.click(); break;
     case 'bd-photo-off': safeSet('hw-backdrop-photo', null); saveBackdrop({ mode: 'plain' }); render(); break;
     case 'text-reset': saveBackdrop({ [textKey()]: '' }); render(); break;
+    case 'anim-try': {
+      const rect = el.getBoundingClientRect();
+      if (anim.one && !reducedMotion()) burst(rect, CONFETTI[4]);
+      if (anim.day) setTimeout(() => celebrateDay(dateStr(new Date())), anim.one ? 700 : 0);
+      if (!anim.one && !anim.day) toast('Both animations are off');
+      break;
+    }
     case 'tint-mode': saveBackdrop({ tintOn: el.dataset.on === '1' }); render(); break;
     case 'rename-open': {
       const f = document.querySelector('[data-form=rename]');
@@ -1740,12 +1827,15 @@ document.addEventListener('change', async (e) => {
   if (qa && e.target.name === 'due') qa.due.dataset.touched = '1';
   if (e.target.dataset.action === 'toggle') {
     const t = state.tasks.find((x) => x.id === e.target.closest('[data-id]').dataset.id);
+    const rect = e.target.getBoundingClientRect(); // before the redraw replaces the checkbox
     t.done = e.target.checked;
     t.doneAt = t.done ? Date.now() : null;
     t.doneBy = t.done ? 'you' : null;
     touch(t);
     commit();
+    celebrate(t, rect);
   }
+  if (e.target.dataset.anim) { anim = { ...anim, [e.target.dataset.anim]: e.target.checked }; safeSet('hw-anim', JSON.stringify(anim)); }
 });
 
 document.addEventListener('submit', async (e) => {

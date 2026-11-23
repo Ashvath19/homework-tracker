@@ -198,6 +198,8 @@ const CLASS_SPOTS = {
   dashSuffix: (ev, sum) => { const m = /^(.+?)\s+[-–]\s+([^-–]{2,60})$/.exec(sum); return m ? { name: clip(m[2]), title: m[1] } : null; },
   parenSuffix: (ev, sum) => { const m = /^(.+?)\s*\(([^()]{2,60})\)\s*$/.exec(sum); return m ? { name: clip(m[2]), title: m[1] } : null; },
   descFirstLine: (ev) => { const v = clip(unescape(ev.DESCRIPTION?.value || '').split('\n')[0]); return v && !/^https?:/i.test(v) ? { name: v } : null; },
+  // "… - Word: CODE" at the very end of the description (a teacher or class tag some schools add)
+  descTag: (ev) => { const m = /[-–]\s*([A-Za-z]{2,12})\s*:\s*([^\n:]{1,30}?)\s*$/.exec(unescape(ev.DESCRIPTION?.value || '').trim()); return m && clip(m[2]) ? { name: clip(m[2]) } : null; },
   descLabel: (ev) => { const v = clip(/^\s*(?:Course|Class|Section)\s*[:\-]\s*(.+)$/im.exec(unescape(ev.DESCRIPTION?.value || ''))?.[1]); return v ? { name: v } : null; },
   descLastLine: (ev) => { const v = clip(unescape(ev.DESCRIPTION?.value || '').trim().split('\n').pop()); return v && !/^https?:/i.test(v) ? { name: v } : null; },
 };
@@ -298,6 +300,10 @@ function logShape(cal, items, spot) {
   out.numbers = { uid: numStats((ev) => ev.UID?.value), link: numStats((ev) => sgyLink(ev).replace(/^https:\/\/[^/]+/, '')) };
   // Description lines: count, and masked last lines (where some systems put the class).
   const lines = items.map((h) => unescape(h.ev.DESCRIPTION?.value || '').trim().split('\n'));
+  // The trailing "- Word: CODE" tag: how many different codes, and their masked shapes.
+  const tags = items.map((h) => /[-–]\s*([A-Za-z]{2,12})\s*:\s*([^\n:]{1,30}?)\s*$/.exec(unescape(h.ev.DESCRIPTION?.value || '').trim())).filter(Boolean);
+  out.descTag = { found: tags.length, distinctCodes: new Set(tags.map((m) => m[2])).size, distinctWords: new Set(tags.map((m) => m[1])).size,
+    shapes: [...new Set(tags.map((m) => `${mask(m[1])}: ${mask(m[2])}`))].slice(0, 6) };
   out.descLines = { avg: +(lines.reduce((a, l) => a + l.length, 0) / (lines.length || 1)).toFixed(1),
     lastDistinct: new Set(lines.map((l) => l[l.length - 1])).size, lastSamples: [...new Set(lines.map((l) => mask(l[l.length - 1])))].slice(0, 5) };
   console.log('schoology feed shape', JSON.stringify({ events: cal.events.length, homework: items.length, picked: spot ? { key: spot.key, classes: spot.distinct, coverage: +spot.coverage.toFixed(2) } : null, fields: out }));

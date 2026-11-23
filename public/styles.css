@@ -494,3 +494,14 @@ body.has-bd::after { content: ''; position: fixed; inset: 0; z-index: -1; pointe
 .tint-preview { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 12px 0 0; font-size: 14px; color: var(--ink-2); }
 .tint-preview .chip { display: inline-flex; align-items: center; gap: 6px; }
 .class-color input[type=color] { width: 56px; height: 40px; }
+
+/* ---------- Celebrations ---------- */
+.confetti { position: fixed; inset: 0; pointer-events: none; z-index: 1000; overflow: hidden; }
+.confetti i { position: absolute; width: 7px; height: 7px; border-radius: 2px; }
+.confetti i.strip { width: 5px; height: 12px; border-radius: 1px; }
+.task input[type=checkbox].pop { animation: check-pop .45s cubic-bezier(.3,1.6,.5,1); }
+@keyframes check-pop { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
+.check-row { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 12px; cursor: pointer; }
+.check-row input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--pen); flex: none; }
+.check-row span { display: flex; flex-direction: column; gap: 2px; }
+.check-row small { color: var(--ink-2); font-size: 13.5px; }
