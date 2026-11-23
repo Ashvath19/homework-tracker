@@ -1,7 +1,8 @@
 // Reads homework from a Canvas calendar feed (Canvas → Calendar → "Calendar Feed").
 // The feed link only shows your calendar, so it can't see grades, messages or submit anything,
 // unlike a full Canvas access key. The downside: it can't tell when you've turned something in.
-import { COLORS } from './_lib.js';
+import crypto from 'node:crypto';
+import { COLORS, redis, K, getProfile, saveProfile, fingerprint, encrypt } from './_lib.js';
 import { guessTag, cleanCourseName, dueFromTimestamp } from './_moodle.js';
 
 // Only real Canvas sites, so the server never fetches an address someone made up.
@@ -11,6 +12,48 @@ export function cleanFeedUrl(raw) {
   const url = String(raw || '').trim().replace(/^webcals?:\/\//i, 'https://').replace(/^http:\/\//i, 'https://');
   const m = FEED.exec(url);
   return m ? { url, host: `${m[1]}.instructure.com` } : null;
+}
+
+// Checks a feed link with Canvas, then either logs into the account that owns it (uid = null)
+// or connects it to the account you're logged in to. The link is secret to each student,
+// so it works like a password, the same way a Moodle key does.
+export async function connectCanvas(raw, uid = null) {
+  const feed = cleanFeedUrl(raw);
+  if (!feed) return { error: "That isn't a Canvas calendar feed link. It should start with https:// and end in .ics." };
+  let cal;
+  try { cal = await fetchFeed(feed.url); } catch {
+    return { error: "Canvas didn't accept that link. Copy it again from Calendar Feed on Canvas." };
+  }
+  const fp = fingerprint(feed.url);
+  const ownerId = await redis.get(K.canvas(fp));
+  const ownerP = ownerId ? await getProfile(ownerId) : null;
+  const owner = ownerP?.canvas?.fp === fp ? ownerId : null;
+  const canvas = { feedEnc: encrypt(feed.url), fp, host: feed.host, name: cal.name || '', connectedAt: Date.now() };
+
+  if (uid) {
+    if (owner && owner !== uid) return { error: 'That Canvas link is already connected to a different account here.' };
+    const p = await getProfile(uid);
+    if (p.moodle) return { error: 'Your homework already comes from Moodle.' };
+    if (p.canvas?.fp && p.canvas.fp !== fp) await redis.del(K.canvas(p.canvas.fp));
+    p.canvas = canvas;
+    await saveProfile(uid, p);
+    await redis.set(K.canvas(fp), uid);
+    return { uid, profile: p };
+  }
+  if (owner) {
+    ownerP.canvas = { ...ownerP.canvas, name: cal.name || ownerP.canvas.name };
+    await saveProfile(owner, ownerP);
+    return { uid: owner, profile: ownerP, created: false };
+  }
+  const newUid = `c${crypto.randomBytes(9).toString('base64url').replace(/[-_]/g, 'x')}`;
+  const profile = {
+    name: cal.name || 'Canvas student', kind: 'own', createdAt: Date.now(),
+    own: { fp: crypto.randomBytes(10).toString('hex') }, canvas, passkeys: [],
+  };
+  await saveProfile(newUid, profile);
+  await redis.set(K.canvas(fp), newUid);
+  await redis.sadd(K.users, newUid);
+  return { uid: newUid, profile, created: true };
 }
 
 export async function fetchFeed(url) {

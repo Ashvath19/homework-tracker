@@ -466,11 +466,11 @@ a.btn { text-decoration: none; display: inline-block; color: var(--ink); }
 
 /* ---------- Backdrop: a picture or gradient behind see-through panels ---------- */
 body.has-bd::before { content: ''; position: fixed; inset: 0; z-index: -1; background: var(--bd); }
-body.has-bd .sidebar, body.has-bd main, body.has-bd .cal-panel {
+/* One even tint over the whole page, so empty space on wide screens isn't brighter than the rest */
+body.has-bd::after { content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
   background: color-mix(in srgb, var(--paper) var(--bd-fade, 72%), transparent);
-  -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
-}
-body.bd-sharp .sidebar, body.bd-sharp main, body.bd-sharp .cal-panel { -webkit-backdrop-filter: none; backdrop-filter: none; }
+  -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
+body.bd-sharp::after { -webkit-backdrop-filter: none; backdrop-filter: none; }
 .bd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 10px; margin: 0 0 14px; }
 .bd-tile { display: flex; flex-direction: column; gap: 5px; padding: 0; border: none; background: none; cursor: pointer; color: var(--ink-2); font: inherit; font-size: 12.5px; text-align: center; }
 .bd-swatch { display: block; height: 52px; border-radius: 9px; box-shadow: inset 0 0 0 1px var(--rule); }

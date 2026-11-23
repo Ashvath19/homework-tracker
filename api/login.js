@@ -1,17 +1,30 @@
 // POST /api/login { token } → log in (or sign up) with your Moodle key
 // POST /api/login { code }  → log in with a 6-digit code from a device you're already logged in on
+// POST /api/login { canvas } → log in (or sign up) with your Canvas calendar feed link
 // POST /api/login { passkey: 'signup-start' | 'signup-finish' | 'login-start' | 'login-finish' |
 //                   'add-start' | 'add-finish', ... } → "log your own" accounts (see _passkey.js)
 import { redis, K, getProfile, saveProfile, startSession, encrypt, decrypt, fingerprint, tooManyFailures, sessionFp } from './_lib.js';
 import { handlePasskey } from './_passkey.js';
 import { ws, MOODLE_BASE } from './_moodle.js';
 import { syncUser } from './sync.js';
+import { connectCanvas } from './_canvas.js';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).end();
-  const { token, code, passkey } = req.body || {};
+  const { token, code, passkey, canvas } = req.body || {};
   if (passkey) return handlePasskey(req, res, String(passkey));
+
+  if (canvas != null) {
+    const limit = await tooManyFailures(req, 'key', 20);
+    if (limit.blocked) return res.status(429).json({ error: 'Too many tries. Wait an hour and try again.' });
+    const r = await connectCanvas(String(canvas), null);
+    if (r.error) { await limit.record(); return res.status(400).json({ error: r.error }); }
+    await startSession(res, r.uid, sessionFp(r.profile));
+    let sync = {};
+    try { sync = await syncUser(r.uid, { notify: false }); } catch (e) { sync = { syncError: e.message }; }
+    return res.json({ ok: true, name: r.profile.name, created: r.created, ...sync });
+  }
 
   if (code != null) {
     const limit = await tooManyFailures(req, 'code', 10);

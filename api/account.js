@@ -1,9 +1,10 @@
 // PUT    /api/account { name?, schedule? } → change your name or school schedule ("log your own" accounts)
 // PUT    /api/account { canvas: link | null } → connect (or disconnect) a Canvas calendar feed
 // DELETE /api/account → permanently delete your account and all your data
-import { requireUser, deleteUser, endSession, getProfile, saveProfile, encrypt, getState, putState, tooManyFailures } from './_lib.js';
+import crypto from 'node:crypto';
+import { redis, K, requireUser, deleteUser, endSession, startSession, sessionFp, getProfile, saveProfile, getState, putState, tooManyFailures } from './_lib.js';
 import { cleanName } from './_passkey.js';
-import { cleanFeedUrl, fetchFeed } from './_canvas.js';
+import { connectCanvas } from './_canvas.js';
 import { syncUser } from './sync.js';
 
 export default async function handler(req, res) {
@@ -27,8 +28,13 @@ export default async function handler(req, res) {
     if (body.canvas !== undefined) {
       if (p.moodle) return res.status(400).json({ error: 'Your homework already comes from Moodle.' });
       if (body.canvas === null) {
+        if (!p.passkeys?.length) return res.status(400).json({ error: "Add a passkey first. Canvas is how you log in, so you'd be locked out." });
+        if (p.canvas?.fp) await redis.del(K.canvas(p.canvas.fp));
         delete p.canvas;
+        // Anyone who logged in with the old link gets logged out; this device stays in.
+        p.own = { ...p.own, fp: crypto.randomBytes(10).toString('hex') };
         await saveProfile(uid, p);
+        await startSession(res, uid, sessionFp(p));
         const s = await getState(uid);
         s.meta = { ...s.meta, lastSync: null, lastError: null, lastCount: null };
         await putState(uid, s);
@@ -36,18 +42,17 @@ export default async function handler(req, res) {
       }
       const limit = await tooManyFailures(req, 'canvas', 20);
       if (limit.blocked) return res.status(429).json({ error: 'Too many tries. Wait an hour and try again.' });
-      const feed = cleanFeedUrl(body.canvas);
-      if (!feed) { await limit.record(); return res.status(400).json({ error: "That isn't a Canvas calendar feed link. It should start with https:// and end in .ics." }); }
-      let cal;
-      try { cal = await fetchFeed(feed.url); } catch {
-        await limit.record();
-        return res.status(400).json({ error: "Canvas didn't accept that link. Copy it again from Calendar Feed on Canvas." });
+      const replacing = !!p.canvas;
+      const r = await connectCanvas(body.canvas, uid);
+      if (r.error) { await limit.record(); return res.status(400).json({ error: r.error }); }
+      if (replacing) { // a new link: log out anyone who got in with the old one
+        r.profile.own = { ...r.profile.own, fp: crypto.randomBytes(10).toString('hex') };
+        await saveProfile(uid, r.profile);
+        await startSession(res, uid, sessionFp(r.profile));
       }
-      p.canvas = { feedEnc: encrypt(feed.url), host: feed.host, name: cal.name || '', connectedAt: Date.now() };
-      await saveProfile(uid, p);
       let sync = {};
       try { sync = await syncUser(uid, { notify: false }); } catch (e) { sync = { syncError: e.message }; }
-      return res.json({ ok: true, canvas: { host: feed.host, name: p.canvas.name }, ...sync });
+      return res.json({ ok: true, canvas: { host: r.profile.canvas.host, name: r.profile.canvas.name }, ...sync });
     }
     await saveProfile(uid, p);
     return res.json({ ok: true, name: p.name, schedule: p.schedule || null });

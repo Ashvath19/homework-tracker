@@ -526,9 +526,10 @@ function render() {
 }
 
 let loginMode = 'key';
-let loginKind = safeGet('hw-login-kind') || 'vcs'; // 'vcs' (Moodle key) | 'own' (log your own, passkey)
+let loginKind = safeGet('hw-login-kind') || 'vcs'; // 'vcs' (Moodle key) | 'canvas' (Canvas feed link) | 'own' (log your own, passkey)
 function renderLogin() {
   if (loginKind === 'own' && loginMode !== 'code') return renderOwnLogin();
+  if (loginKind === 'canvas' && loginMode !== 'code') return renderCanvasLogin();
   const keyForm = `
     <form class="login-form" data-form="login-key">
       <label for="key">Moodle key</label>
@@ -561,7 +562,7 @@ function renderLogin() {
       <input id="code" name="code" class="field code-input" inputmode="numeric" maxlength="7" autocomplete="one-time-code" required>
       <button class="primary">Log in</button>
       <p class="hint">Get a code on a device where you're already logged in, under Settings.</p>
-      <button type="button" class="link-btn switch" data-action="login-mode" data-mode="key">${loginKind === 'own' ? 'Log in with a passkey instead' : 'Log in with your Moodle key instead'}</button>
+      <button type="button" class="link-btn switch" data-action="login-mode" data-mode="key">${loginKind === 'own' ? 'Log in with a passkey instead' : loginKind === 'canvas' ? 'Log in with your Canvas link instead' : 'Log in with your Moodle key instead'}</button>
     </form>`;
   $('#main').innerHTML = `
     <div class="login">
@@ -581,9 +582,48 @@ function renderLogin() {
 function loginTabs() {
   return `<div class="seg login-tabs" role="tablist">
     <button role="tab" aria-selected="${loginKind === 'vcs'}" data-action="login-kind" data-kind="vcs">Moodle</button>
+    <button role="tab" aria-selected="${loginKind === 'canvas'}" data-action="login-kind" data-kind="canvas">Canvas</button>
     <button role="tab" aria-selected="${loginKind === 'own'}" data-action="login-kind" data-kind="own">Log your own</button>
   </div>`;
 }
+function renderCanvasLogin() {
+  $('#main').innerHTML = `
+    <div class="login">
+      <h1><span class="hl">Homework</span></h1>
+      <p class="lede">Your Canvas assignments, sorted by when they're due.</p>
+      ${loginTabs()}
+      <div class="beta-note">
+        <p><b>Still being tested.</b> It might miss some homework or show the wrong due date. Double-check Canvas for anything important, and ${reportLink('report it on GitHub')} if something's off.</p>
+        <p><b>Your Canvas link works like a password.</b> Anyone with it can see your Canvas calendar and log in here as you, so don't share it. It can't see your grades or messages, or turn anything in.</p>
+      </div>
+      <form class="login-form" data-form="login-canvas">
+        <label for="canvas-feed">Canvas calendar link</label>
+        <input id="canvas-feed" name="feed" class="field" placeholder="https://…instructure.com/feeds/calendars/user_….ics" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+        <button class="primary">Log in</button>
+        <details>
+          <summary>Where do I find it?</summary>
+          <ol>
+            <li>Open your school's Canvas website on a computer (not the app), for example <a href="https://esuhsd.instructure.com/calendar" target="_blank" rel="noopener">esuhsd.instructure.com</a>, and go to <b>Calendar</b>.</li>
+            <li>Click <b>Calendar Feed</b> at the bottom right, under the list of calendars.</li>
+            <li>Copy the link it shows and paste it here.</li>
+          </ol>
+          The first time, this makes your account. After that, the same link logs you back in.
+        </details>
+        <details>
+          <summary>What can it see?</summary>
+          <ul>
+            <li>Only your Canvas calendar: assignment names, due dates and instructions. Canvas doesn't share what you've turned in, so you check things off yourself.</li>
+            <li>It's stored encrypted, and only you can see your homework list here.</li>
+            <li>This site is run by a student, not your school. To cut it off, disconnect Canvas in Settings or delete your account.</li>
+          </ul>
+        </details>
+        <button type="button" class="link-btn switch" data-action="login-mode" data-mode="code">Log in with a code from another device</button>
+      </form>
+      <p class="err" id="login-err" role="alert"></p>
+    </div>`;
+  $('#main input')?.focus();
+}
+
 function renderOwnLogin() {
   const ok = passkeysSupported();
   $('#main').innerHTML = `
@@ -1368,7 +1408,7 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'canvas-off': {
-      if (!confirm("Disconnect Canvas? Homework it already added stays, but new assignments won't show up on their own.")) break;
+      if (!confirm("Disconnect Canvas? Homework it already added stays, but new assignments won't show up on their own. Your other devices will be logged out.")) break;
       try { await api('PUT', '/api/account', { canvas: null }); canvas = null; await pull(); toast('Canvas disconnected'); render(); }
       catch (err) { toast(err.message); }
       break;
@@ -1531,6 +1571,22 @@ document.addEventListener('submit', async (e) => {
       }
       const body = f.dataset.form === 'login-key' ? { token: f.token.value } : { code: f.code.value };
       await api('POST', '/api/login', body);
+      await boot(true);
+    } catch (err) {
+      $('#login-err').textContent = err.message;
+      btn.disabled = false;
+      btn.textContent = 'Log in';
+    }
+    return;
+  }
+  if (f.dataset.form === 'login-canvas') {
+    e.preventDefault();
+    const btn = f.querySelector('button.primary');
+    btn.disabled = true;
+    btn.textContent = 'Checking with Canvas…';
+    try {
+      const r = await api('POST', '/api/login', { canvas: f.feed.value });
+      if (r.created) justSignedUp = true;
       await boot(true);
     } catch (err) {
       $('#login-err').textContent = err.message;
