@@ -505,3 +505,13 @@ body.has-bd::after { content: ''; position: fixed; inset: 0; z-index: -1; pointe
 .check-row input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--pen); flex: none; }
 .check-row span { display: flex; flex-direction: column; gap: 2px; }
 .check-row small { color: var(--ink-2); font-size: 13.5px; }
+.confetti i.star { width: 10px; height: 10px; border-radius: 0; clip-path: polygon(50% 0, 61% 38%, 100% 50%, 61% 62%, 50% 100%, 39% 62%, 0 50%, 39% 38%); }
+.confetti i.ring { width: 18px; height: 18px; border-radius: 50%; border: 2px solid; background: none; }
+.confetti i.emoji { width: auto; height: auto; font-size: 22px; font-style: normal; line-height: 1; }
+.confetti i.spark { width: 5px; height: 5px; border-radius: 50%; box-shadow: 0 0 6px currentColor; }
+.confetti i.balloon { width: 34px; height: 42px; border-radius: 50% 50% 48% 48% / 55% 55% 45% 45%; opacity: .92; }
+.confetti i.balloon::after { content: ''; position: absolute; left: 50%; top: 100%; width: 1px; height: 46px; background: rgba(120,120,120,.6); }
+.anim-row { margin: 0 0 16px; }
+.anim-row .check-row { margin-bottom: 8px; }
+.anim-style { margin-left: 28px; }
+.anim-style select { width: auto; padding: 6px 8px; }

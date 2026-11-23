@@ -476,7 +476,7 @@ const classById = (id) => state.classes.find((c) => c.id === id && !c.deleted);
 const pending = () => tasks().filter((t) => !t.done && classById(t.classId));
 
 // ---------- celebrations (Settings > Animations; saved on this device) ----------
-let anim = { one: true, day: true };
+let anim = { one: true, day: true, oneStyle: 'confetti', dayStyle: 'confetti' };
 try { anim = { ...anim, ...JSON.parse(safeGet('hw-anim') || '{}') }; } catch {}
 const reducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 const CONFETTI = ['#ffd166', '#ef476f', '#06d6a0', '#118ab2', '#8b5cf6', '#f78c6b'];
@@ -488,7 +488,7 @@ function celebrate(t, rect) {
   if (anim.day && sameDay.length >= 2 && sameDay.every((x) => x.done)) return celebrateDay(t.due);
   if (!anim.one) return;
   popCheck(t.id);
-  if (!reducedMotion() && rect) burst(rect, classColor(classById(t.classId)));
+  if (!reducedMotion() && rect) (ONE_STYLES[anim.oneStyle] || ONE_STYLES.confetti).run(rect, classColor(classById(t.classId)));
 }
 function popCheck(id) {
   requestAnimationFrame(() => {
@@ -527,6 +527,9 @@ function celebrateDay(due) {
     : new Date(`${due}T12:00`).toLocaleDateString('en-US', { weekday: 'long', ...(due < today || due > addDaysStr(today, 6) ? { month: 'short', day: 'numeric' } : {}) });
   toast(`All done for ${name}! 🎉`);
   if (reducedMotion()) return;
+  (DAY_STYLES[anim.dayStyle] || DAY_STYLES.confetti).run();
+}
+function confettiRain() {
   const layer = confettiLayer();
   const w = window.innerWidth, h = window.innerHeight;
   for (let i = 0; i < 90; i++) {
@@ -544,12 +547,128 @@ function celebrateDay(due) {
   }
   setTimeout(() => layer.remove(), 3400);
 }
+// Small helper: animate one piece and let it disappear.
+function piece(layer, x, y, { cls = '', bg = '', text = '' } = {}) {
+  const p = document.createElement('i');
+  if (cls) p.className = cls;
+  if (bg) p.style.background = bg;
+  if (text) p.textContent = text;
+  p.style.left = `${x}px`; p.style.top = `${y}px`;
+  layer.append(p);
+  return p;
+}
+const removeLater = (layer, ms) => setTimeout(() => layer.remove(), ms);
+const center = (r) => [r.left + r.width / 2, r.top + r.height / 2];
+
+function sparkles(rect, color) {
+  const layer = confettiLayer(); const [x, y] = center(rect);
+  for (let i = 0; i < 10; i++) {
+    const p = piece(layer, x, y, { cls: 'star', bg: i % 2 ? '#ffd166' : color });
+    const a = Math.random() * Math.PI * 2, d = 22 + Math.random() * 34;
+    p.animate([
+      { transform: 'translate(-50%, -50%) scale(0) rotate(0deg)', opacity: 1 },
+      { transform: `translate(calc(-50% + ${Math.cos(a) * d * 0.6}px), calc(-50% + ${Math.sin(a) * d * 0.6}px)) scale(1.2) rotate(90deg)`, opacity: 1, offset: 0.5 },
+      { transform: `translate(calc(-50% + ${Math.cos(a) * d}px), calc(-50% + ${Math.sin(a) * d}px)) scale(0) rotate(180deg)`, opacity: 0 },
+    ], { duration: 700 + Math.random() * 300, delay: Math.random() * 120, easing: 'ease-out', fill: 'forwards' });
+  }
+  removeLater(layer, 1200);
+}
+function ripple(rect, color) {
+  const layer = confettiLayer(); const [x, y] = center(rect);
+  for (let i = 0; i < 3; i++) {
+    const p = piece(layer, x, y, { cls: 'ring' });
+    p.style.borderColor = color;
+    p.animate([
+      { transform: 'translate(-50%, -50%) scale(.4)', opacity: 0.9 },
+      { transform: 'translate(-50%, -50%) scale(4)', opacity: 0 },
+    ], { duration: 800, delay: i * 140, easing: 'cubic-bezier(.2,.7,.4,1)', fill: 'forwards' });
+  }
+  removeLater(layer, 1300);
+}
+function emojiPop(rect) {
+  const layer = confettiLayer(); const [x, y] = center(rect);
+  const set = ['🎉', '✨', '⭐', '💪', '✅'];
+  for (let i = 0; i < 5; i++) {
+    const p = piece(layer, x, y, { cls: 'emoji', text: set[i] });
+    const dx = (i - 2) * 16 + (Math.random() - 0.5) * 10;
+    p.animate([
+      { transform: 'translate(-50%, -50%) scale(.3)', opacity: 0 },
+      { transform: `translate(calc(-50% + ${dx * 0.5}px), calc(-50% - 22px)) scale(1.1)`, opacity: 1, offset: 0.3 },
+      { transform: `translate(calc(-50% + ${dx}px), calc(-50% - 60px)) scale(.9)`, opacity: 0 },
+    ], { duration: 950, delay: i * 50, easing: 'ease-out', fill: 'forwards' });
+  }
+  removeLater(layer, 1400);
+}
+function fireworks() {
+  const layer = confettiLayer();
+  const w = window.innerWidth, h = window.innerHeight;
+  for (let b = 0; b < 5; b++) {
+    const x = w * (0.15 + Math.random() * 0.7), y = h * (0.15 + Math.random() * 0.4), col = CONFETTI[b % CONFETTI.length];
+    for (let i = 0; i < 28; i++) {
+      const p = piece(layer, x, y, { cls: 'spark', bg: i % 5 === 0 ? '#fff4c2' : col });
+      const a = (Math.PI * 2 * i) / 28, d = 70 + Math.random() * 50;
+      p.animate([
+        { transform: 'translate(-50%, -50%) scale(1)', opacity: 1 },
+        { transform: `translate(calc(-50% + ${Math.cos(a) * d}px), calc(-50% + ${Math.sin(a) * d}px)) scale(.9)`, opacity: 1, offset: 0.6 },
+        { transform: `translate(calc(-50% + ${Math.cos(a) * d * 1.1}px), calc(-50% + ${Math.sin(a) * d * 1.1 + 40}px)) scale(.3)`, opacity: 0 },
+      ], { duration: 1300, delay: b * 380, easing: 'cubic-bezier(.15,.8,.3,1)', fill: 'forwards' });
+    }
+  }
+  removeLater(layer, 3500);
+}
+function balloons() {
+  const layer = confettiLayer();
+  const w = window.innerWidth, h = window.innerHeight;
+  for (let i = 0; i < 14; i++) {
+    const p = piece(layer, Math.random() * (w - 40) + 20, h + 20, { cls: 'balloon', bg: CONFETTI[i % CONFETTI.length] });
+    const sway = (Math.random() - 0.5) * 80;
+    p.animate([
+      { transform: 'translate(-50%, 0) rotate(0deg)' },
+      { transform: `translate(calc(-50% + ${sway}px), ${-h * 0.55}px) rotate(${sway / 8}deg)`, offset: 0.5 },
+      { transform: `translate(calc(-50% - ${sway / 2}px), ${-h - 120}px) rotate(${-sway / 10}deg)` },
+    ], { duration: 3200 + Math.random() * 1400, delay: Math.random() * 700, easing: 'ease-in-out', fill: 'forwards' });
+  }
+  removeLater(layer, 5400);
+}
+function emojiRain() {
+  const layer = confettiLayer();
+  const w = window.innerWidth, h = window.innerHeight;
+  const set = ['🎉', '🥳', '✨', '⭐', '🏆', '🙌'];
+  for (let i = 0; i < 40; i++) {
+    const p = piece(layer, Math.random() * w, -40, { cls: 'emoji', text: set[i % set.length] });
+    p.animate([
+      { transform: 'translate(0, 0) rotate(0deg)', opacity: 1 },
+      { transform: `translate(${(Math.random() - 0.5) * 120}px, ${h + 80}px) rotate(${(Math.random() - 0.5) * 360}deg)`, opacity: 1 },
+    ], { duration: 1800 + Math.random() * 1200, delay: Math.random() * 600, easing: 'cubic-bezier(.3,.4,.6,1)', fill: 'forwards' });
+  }
+  removeLater(layer, 3800);
+}
+const ONE_STYLES = {
+  confetti: { name: 'Confetti burst', run: burst },
+  sparkle: { name: 'Sparkles', run: sparkles },
+  ripple: { name: 'Ripple', run: ripple },
+  emoji: { name: 'Emoji pop', run: emojiPop },
+};
+const DAY_STYLES = {
+  confetti: { name: 'Confetti rain', run: () => confettiRain() },
+  fireworks: { name: 'Fireworks', run: fireworks },
+  balloons: { name: 'Balloons', run: balloons },
+  emoji: { name: 'Emoji rain', run: emojiRain },
+};
+
 function animationsCard() {
-  const row = (key, label, hint) => `<label class="check-row"><input type="checkbox" data-anim="${key}" ${anim[key] ? 'checked' : ''}>
-      <span><b>${label}</b><small>${hint}</small></span></label>`;
-  return `${row('one', 'When you finish an assignment', 'The checkbox pops and a little confetti flies out.')}
-    ${row('day', 'When you finish everything due on a day', 'Confetti across the screen and an "All done" message.')}
-    <div class="row"><button class="link-btn" data-action="anim-try">Try them</button></div>
+  const row = (key, label, hint, styles) => `<div class="anim-row">
+      <label class="check-row"><input type="checkbox" data-anim="${key}" ${anim[key] ? 'checked' : ''}>
+        <span><b>${label}</b><small>${hint}</small></span></label>
+      <div class="row anim-style">
+        <select class="field" data-anim-style="${key}Style" aria-label="Style" ${anim[key] ? '' : 'disabled'}>
+          ${Object.entries(styles).map(([id, st]) => `<option value="${id}" ${anim[`${key}Style`] === id ? 'selected' : ''}>${st.name}</option>`).join('')}
+        </select>
+        <button class="btn" data-action="anim-try" data-which="${key}" ${anim[key] ? '' : 'disabled'}>Try</button>
+      </div>
+    </div>`;
+  return `${row('one', 'When you finish an assignment', 'A little celebration right where you checked it off.', ONE_STYLES)}
+    ${row('day', 'When you finish everything due on a day', 'A big one across the screen, plus an "All done" message.', DAY_STYLES)}
     <p class="hint">Saved on this device only.${reducedMotion() ? ' Your device is set to reduce motion, so you\'ll see the message without the confetti.' : ''}</p>`;
 }
 
@@ -1661,13 +1780,11 @@ document.addEventListener('click', async (e) => {
     case 'bd-upload': $('#bd-file')?.click(); break;
     case 'bd-photo-off': safeSet('hw-backdrop-photo', null); saveBackdrop({ mode: 'plain' }); render(); break;
     case 'text-reset': saveBackdrop({ [textKey()]: '' }); render(); break;
-    case 'anim-try': {
-      const rect = el.getBoundingClientRect();
-      if (anim.one && !reducedMotion()) burst(rect, CONFETTI[4]);
-      if (anim.day) setTimeout(() => celebrateDay(dateStr(new Date())), anim.one ? 700 : 0);
-      if (!anim.one && !anim.day) toast('Both animations are off');
+    case 'anim-try':
+      if (el.dataset.which === 'day') celebrateDay(dateStr(new Date()));
+      else if (reducedMotion()) toast('Your device is set to reduce motion');
+      else (ONE_STYLES[anim.oneStyle] || ONE_STYLES.confetti).run(el.getBoundingClientRect(), CONFETTI[4]);
       break;
-    }
     case 'tint-mode': saveBackdrop({ tintOn: el.dataset.on === '1' }); render(); break;
     case 'rename-open': {
       const f = document.querySelector('[data-form=rename]');
@@ -1835,7 +1952,8 @@ document.addEventListener('change', async (e) => {
     commit();
     celebrate(t, rect);
   }
-  if (e.target.dataset.anim) { anim = { ...anim, [e.target.dataset.anim]: e.target.checked }; safeSet('hw-anim', JSON.stringify(anim)); }
+  if (e.target.dataset.anim) { anim = { ...anim, [e.target.dataset.anim]: e.target.checked }; safeSet('hw-anim', JSON.stringify(anim)); render(); }
+  if (e.target.dataset.animStyle) { anim = { ...anim, [e.target.dataset.animStyle]: e.target.value }; safeSet('hw-anim', JSON.stringify(anim)); }
 });
 
 document.addEventListener('submit', async (e) => {
