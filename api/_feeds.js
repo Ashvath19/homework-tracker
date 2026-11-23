@@ -54,7 +54,6 @@ export async function connectFeed(kind, raw, uid = null) {
   try { cal = await fetchFeed(kind, feed.url); } catch {
     return { error: `${label} didn't accept that link. Copy it again from ${label}.` };
   }
-  if (kind === 'schoology') logShape(cal); // see logShape: no names, titles or links, just the layout
 
   const fp = fingerprint(feed.url);
   const ownerId = await redis.get(K.feed(kind, fp));
@@ -177,40 +176,75 @@ function readCanvas(ev) {
   };
 }
 
-// Schoology: we haven't seen a real feed yet, so this reads every place the class name and
-// link could plausibly be, and falls back to one "Schoology" class you can sort by hand.
+// Schoology: calendars differ in where (and whether) they say which class something is for.
+// Instead of guessing one spot, look at the whole calendar and pick the field that splits the
+// homework into a sensible handful of groups, like real classes would.
 const HOMEWORKISH = /\b(due|hw|homework|assignment|quiz|test|exam|midterm|final|project|essay|lab|read|reading|worksheet|packet|problems?|questions|write|draft|submit|turn in|study|review|presentation|notes)\b/i;
-function readSchoology(ev) {
+const sgyLink = (ev) => {
+  const desc = unescape(ev.DESCRIPTION?.value || '');
+  const url = (/^https:\/\//i.test(ev.URL?.value || '') ? ev.URL.value.trim() : '')
+    || /https:\/\/(?:[a-z0-9-]+\.)?schoology\.com\/[^\s"<>]+/i.exec(desc)?.[0] || '';
+  return /^https:\/\/(?:[a-z0-9-]+\.)?schoology\.com\//i.test(url) ? url : '';
+};
+const clip = (s) => { s = (s || '').replace(/\s+/g, ' ').trim(); return s.length >= 2 && s.length <= 80 ? s : ''; };
+// Every place a class name could be. Each returns { name, title? } (title = the summary without the class part).
+const CLASS_SPOTS = {
+  bracket: (ev, sum) => { const m = /^(.*?)\s*\[([^\]]+)\]\s*$/.exec(sum); return m && clip(m[2]) ? { name: clip(m[2]), title: m[1] } : null; },
+  categories: (ev) => { const v = clip(unescape(ev.CATEGORIES?.value || '').split(',')[0]); return v ? { name: v } : null; },
+  location: (ev) => { const v = clip(unescape(ev.LOCATION?.value || '')); return v ? { name: v } : null; },
+  courseLink: (ev) => { const n = /\/(?:course|section)s?\/(\d+)/i.exec(sgyLink(ev))?.[1]; return n ? { name: `Class ${n}`, id: n } : null; },
+  organizer: (ev) => { const v = clip(unescape(/CN="?([^";:]+)/i.exec(ev.ORGANIZER?.params || '')?.[1] || '')); return v ? { name: v } : null; },
+  prefix: (ev, sum) => { const m = /^([^:]{2,60}):\s+(.+)$/.exec(sum); return m ? { name: clip(m[1]), title: m[2] } : null; },
+  dashSuffix: (ev, sum) => { const m = /^(.+?)\s+[-–]\s+([^-–]{2,60})$/.exec(sum); return m ? { name: clip(m[2]), title: m[1] } : null; },
+  parenSuffix: (ev, sum) => { const m = /^(.+?)\s*\(([^()]{2,60})\)\s*$/.exec(sum); return m ? { name: clip(m[2]), title: m[1] } : null; },
+  descFirstLine: (ev) => { const v = clip(unescape(ev.DESCRIPTION?.value || '').split('\n')[0]); return v && !/^https?:/i.test(v) ? { name: v } : null; },
+};
+const xSpots = (events) => [...new Set(events.flatMap((e) => Object.keys(e).filter((k) => k.startsWith('X-'))))]
+  .reduce((o, k) => ({ ...o, [k]: (ev) => { const v = clip(unescape(ev[k]?.value || '')); return v ? { name: v } : null; } }), {});
+
+function schoologyHomework(ev) {
   const when = readWhen(ev.DTSTART) || readWhen(ev.DTEND);
   if (!when) return null;
   const summary = unescape(ev.SUMMARY?.value || '').trim() || 'Untitled';
-  const desc = unescape(ev.DESCRIPTION?.value || '').trim();
-  const linkIn = (s) => /https:\/\/(?:[a-z0-9-]+\.)?schoology\.com\/[^\s"<>]+/i.exec(s)?.[0] || '';
-  const url = (/^https:\/\//i.test(ev.URL?.value || '') ? ev.URL.value.trim() : '') || linkIn(desc);
-  const okUrl = /^https:\/\/(?:[a-z0-9-]+\.)?schoology\.com\//i.test(url) ? url : '';
+  const okUrl = sgyLink(ev);
   const kindM = /\/(assignment|assessment|discussion|event|page|document)s?\/(\d+)/i.exec(okUrl)
     || /\/course\/\d+\/materials\/(discussion|gp)\/view\/(\d+)/i.exec(okUrl);
-  const kind = (kindM?.[1] || '').toLowerCase();
   const uidRaw = ev.UID?.value || '';
-  const uidKind = /(assignment|assessment|discussion|event)/i.exec(uidRaw)?.[1]?.toLowerCase();
-  const type = kind || uidKind || 'event';
+  const type = (kindM?.[1] || '').toLowerCase() || /(assignment|assessment|discussion|event)/i.exec(uidRaw)?.[1]?.toLowerCase() || 'event';
   // Plain calendar events (rallies, "no school") aren't homework, unless they sound like it.
   if ((type === 'event' || type === 'page' || type === 'document') && !HOMEWORKISH.test(summary)) return null;
+  return { ev, when, summary, okUrl, type, kindM, uidRaw };
+}
 
-  // Class name: "Title [Class]", "Class: Title", CATEGORIES or LOCATION.
-  let title = summary, courseName = '';
-  const br = /^(.*?)\s*\[([^\]]+)\]\s*$/.exec(summary);
-  if (br) { title = br[1]; courseName = br[2]; }
-  courseName ||= unescape(ev.CATEGORIES?.value || '').split(',')[0].trim()
-    || unescape(ev.LOCATION?.value || '').trim()
-    || /^(?:Course|Class|Section)\s*:\s*(.+)$/im.exec(desc)?.[1]?.trim() || '';
+// The spot that groups the homework most like classes: present on most items, 2-20 different
+// values, and several items per value. Returns null if nothing looks like classes.
+export function pickClassSpot(items) {
+  const spots = { ...CLASS_SPOTS, ...xSpots(items.map((h) => h.ev)) };
+  let best = null;
+  for (const [key, fn] of Object.entries(spots)) {
+    const names = items.map((h) => fn(h.ev, h.summary)?.name).filter(Boolean);
+    const distinct = new Set(names.map((n) => n.toLowerCase())).size;
+    const coverage = items.length ? names.length / items.length : 0;
+    if (coverage < 0.6 || distinct < 2 || distinct > 20 || names.length / distinct < 1.5) continue;
+    if (!best || coverage > best.coverage + 0.05) best = { key, fn, coverage, distinct };
+  }
+  return best;
+}
+
+function readSchoology(ev, ctx) {
+  const h = schoologyHomework(ev);
+  if (!h) return null;
+  const { when, summary, okUrl, type, kindM, uidRaw } = h;
+  const spot = ctx?.spot?.fn(ev, summary) || CLASS_SPOTS.bracket(ev, summary);
   const courseNum = /\/(?:course|section)s?\/(\d+)/i.exec(okUrl)?.[1];
+  const courseName = spot?.name || '';
   const id = kindM?.[2] ? `${type}-${kindM[2]}` : `u-${shortHash(uidRaw || `${summary}|${when.due}`)}`;
+  const desc = unescape(ev.DESCRIPTION?.value || '').trim();
   return {
     id,
-    title: title.trim() || 'Untitled',
+    title: (spot?.title || summary).trim() || 'Untitled',
     courseName: courseName.slice(0, 80) || 'Schoology',
-    courseId: courseNum || (courseName ? `n-${courseName.toLowerCase().slice(0, 80)}` : 'none'),
+    courseId: spot?.id || (courseName ? `n-${courseName.toLowerCase().slice(0, 80)}` : courseNum || 'none'),
     due: when.due, dueAt: when.sec,
     url: okUrl,
     desc: desc.replace(/https:\/\/\S+/g, '').trim().slice(0, 4000),
@@ -218,23 +252,24 @@ function readSchoology(ev) {
   };
 }
 
-// Logs only the *shape* of a Schoology feed (which fields appear, link patterns with numbers
-// blanked out), so the class-sorting above can be fixed once a real feed connects. Never logs
-// names, titles, descriptions or the link itself.
-function logShape(cal) {
-  const fields = {}, paths = {}, uids = {};
-  let brackets = 0, colons = 0;
-  for (const ev of cal.events.slice(0, 300)) {
-    for (const k of Object.keys(ev)) fields[k] = (fields[k] || 0) + 1;
-    const u = /^https?:\/\/[^/]+(\/[^?#\s]*)/.exec(ev.URL?.value || '')?.[1];
-    if (u) { const p = u.replace(/\d+/g, 'N'); paths[p] = (paths[p] || 0) + 1; }
-    const uid = (ev.UID?.value || '').replace(/[0-9a-f]{6,}/gi, 'X').replace(/\d+/g, 'N').slice(0, 40);
-    uids[uid] = (uids[uid] || 0) + 1;
-    const s = ev.SUMMARY?.value || '';
-    if (/\[[^\]]+\]\s*$/.test(s)) brackets++;
-    if (/^[^:]{2,60}:\s/.test(s)) colons++;
+// Logs only the *shape* of a Schoology feed, so class sorting can be fixed if the pick above
+// misses: which fields appear, how many different values each has, and masked examples where
+// every letter becomes a/A and every digit 9 ("Aaaa 9: Aaaa aaa"). Never names, titles or links.
+const mask = (s) => String(s || '').replace(/https?:\/\/\S+/g, 'LINK').replace(/[A-Z]/g, 'A').replace(/[a-z]/g, 'a')
+  .replace(/\d/g, '9').replace(/a{3,}/g, 'aa').replace(/A{3,}/g, 'AA').replace(/9{3,}/g, '99').slice(0, 60);
+function logShape(cal, items, spot) {
+  const fields = {};
+  for (const ev of cal.events.slice(0, 400)) {
+    for (const [k, f] of Object.entries(ev)) {
+      const x = (fields[k] ||= { n: 0, values: new Set(), samples: new Set(), params: new Set() });
+      x.n++; x.values.add(f.value);
+      if (x.samples.size < 4) x.samples.add(mask(unescape(f.value).split('\n')[0]));
+      if (f.params) x.params.add(f.params.replace(/"[^"]*"/g, '"…"').slice(0, 40));
+    }
   }
-  console.log('schoology feed shape', JSON.stringify({ events: cal.events.length, hasName: !!cal.name, fields, paths, uids, brackets, colons }));
+  const out = Object.fromEntries(Object.entries(fields).map(([k, x]) => [k, { n: x.n, distinct: x.values.size, samples: [...x.samples], params: [...x.params].slice(0, 3) }]));
+  delete out.UID?.samples; delete out.DTSTART?.samples;
+  console.log('schoology feed shape', JSON.stringify({ events: cal.events.length, homework: items.length, picked: spot ? { key: spot.key, classes: spot.distinct, coverage: +spot.coverage.toFixed(2) } : null, fields: out }));
 }
 
 const READERS = { canvas: readCanvas, schoology: readSchoology };
@@ -242,9 +277,15 @@ const READERS = { canvas: readCanvas, schoology: readSchoology };
 // Compares the feed with our saved state and returns only the items that changed.
 export function diffWithFeed(kind, state, feed, todayYmd) {
   const now = Date.now();
+  let ctx = null;
+  if (kind === 'schoology') {
+    const hw = feed.events.map(schoologyHomework).filter(Boolean);
+    ctx = { spot: pickClassSpot(hw) };
+    logShape(feed, hw, ctx.spot);
+  }
   const items = new Map();
   for (const ev of feed.events) {
-    const a = READERS[kind](ev);
+    const a = READERS[kind](ev, ctx);
     if (a) items.set(a.id, a); // repeats of the same assignment: keep the last one
   }
 
@@ -254,6 +295,7 @@ export function diffWithFeed(kind, state, feed, todayYmd) {
   const usedColors = new Set(state.classes.filter((c) => !c.deleted).map((c) => c.color));
   const changedClasses = [], changedTasks = [], newTasks = [];
   const seen = new Set();
+  const fallbackId = `${kind}-c${shortHash('none')}`; // the catch-all class, when a class isn't known
   const from = addDaysYmd(todayYmd, -FEEDS[kind].backDays);
   let upcoming = 0;
 
@@ -285,9 +327,12 @@ export function diffWithFeed(kind, state, feed, todayYmd) {
     } else if (!existing.deleted) {
       const reopened = existing.done && existing.doneBy === kind; // it came back
       const renamedByYou = existing.title !== existing[titleKey];
-      if (existing.due !== a.due || existing[titleKey] !== a.title || existing.url !== a.url || existing.desc !== a.desc || reopened) {
+      // Sitting in the catch-all class (from before its real class was known)? Move it to its class.
+      const move = existing.classId === fallbackId && cls.id !== fallbackId;
+      if (existing.due !== a.due || existing[titleKey] !== a.title || existing.url !== a.url || existing.desc !== a.desc || reopened || move) {
         changedTasks.push({
           ...existing, due: a.due, dueAt: a.dueAt, url: a.url, desc: a.desc, [titleKey]: a.title,
+          ...(move ? { classId: cls.id } : {}),
           title: renamedByYou ? existing.title : a.title,
           ...(reopened ? { done: false, doneAt: null, doneBy: null } : {}),
           updatedAt: now,
@@ -302,7 +347,16 @@ export function diffWithFeed(kind, state, feed, todayYmd) {
       changedTasks.push({ ...t, done: true, doneAt: now, doneBy: kind, updatedAt: now });
     }
   }
-  return { changedClasses, changedTasks, newTasks, eventCount: upcoming };
+  // Once everything has moved out of the catch-all class, remove it (unless you renamed it).
+  const fallback = state.classes.find((c) => c.id === fallbackId && !c.deleted);
+  if (fallback && !fallback.renamed) {
+    const final = new Map(state.tasks.map((t) => [t.id, t]));
+    for (const t of changedTasks) final.set(t.id, t);
+    if (![...final.values()].some((t) => !t.deleted && t.classId === fallbackId)) {
+      changedClasses.push({ ...fallback, deleted: true, updatedAt: now });
+    }
+  }
+  return { changedClasses, changedTasks, newTasks, eventCount: upcoming, classSpot: ctx?.spot?.key || null };
 }
 
 function addDaysYmd(d, n) {
