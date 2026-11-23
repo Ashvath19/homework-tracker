@@ -744,56 +744,112 @@ function completedSection(list, showClass) {
     </details>`;
 }
 
-// ---------- backdrop (saved on this device only) ----------
-const BACKDROPS = {
-  plain:    { name: 'Plain', css: '' },
-  sky:      { name: 'Sky', css: 'linear-gradient(160deg, #a1c4fd, #c2e9fb)' },
-  sunset:   { name: 'Sunset', css: 'linear-gradient(160deg, #ff9a8b, #ff6a88 45%, #ffc796)' },
-  mint:     { name: 'Mint', css: 'linear-gradient(160deg, #84fab0, #8fd3f4)' },
-  lavender: { name: 'Lavender', css: 'linear-gradient(160deg, #e0c3fc, #8ec5fc)' },
-  peach:    { name: 'Peach', css: 'linear-gradient(160deg, #ffecd2, #fcb69f)' },
-  forest:   { name: 'Forest', css: 'linear-gradient(160deg, #134e5e, #71b280)' },
-  night:    { name: 'Night', css: 'linear-gradient(160deg, #0f2027, #203a43, #2c5364)' },
-  graph:    { name: 'Graph paper', sharp: true, css: 'linear-gradient(rgba(39,71,208,.45) 1px, transparent 1px) 0 0 / 22px 22px, linear-gradient(90deg, rgba(39,71,208,.45) 1px, transparent 1px) 0 0 / 22px 22px, #e8edf8' },
-  dots:     { name: 'Dots', sharp: true, css: 'radial-gradient(rgba(23,32,51,.6) 1.4px, transparent 1.9px) 0 0 / 18px 18px, #efece4' },
+// ---------- colors: backdrop + text color (saved on this device only) ----------
+// mode: 'plain' | 'color' (one color) | 'gradient' (two colors + direction) | 'photo'
+const GRAD_DIRS = { 180: 'Top to bottom', 135: 'Diagonal', 90: 'Left to right', 45: 'Other diagonal', radial: 'From the center' };
+const OLD_PRESETS = { // presets from before you could pick your own colors
+  sky: ['#a1c4fd', '#c2e9fb'], sunset: ['#ff9a8b', '#ffc796'], mint: ['#84fab0', '#8fd3f4'], lavender: ['#e0c3fc', '#8ec5fc'],
+  peach: ['#ffecd2', '#fcb69f'], forest: ['#134e5e', '#71b280'], night: ['#0f2027', '#2c5364'], graph: ['#e8edf8', '#e8edf8'], dots: ['#efece4', '#efece4'],
 };
-let backdrop = { id: 'plain', fade: 0.72 };
-try { backdrop = { ...backdrop, ...JSON.parse(safeGet('hw-backdrop') || '{}') }; } catch {}
+const HEX = /^#[0-9a-f]{6}$/i;
+let backdrop = { mode: 'plain', color: '#8ec5fc', g1: '#a1c4fd', g2: '#fbc2eb', dir: '135', fade: 0.72, textLight: '', textDark: '' };
+// Text color is saved separately for light and dark mode, so dark text picked in the day
+// doesn't vanish when your device switches to dark mode at night.
+const darkMq = window.matchMedia?.('(prefers-color-scheme: dark)');
+const textKey = () => (darkMq?.matches ? 'textDark' : 'textLight');
+const textNow = () => backdrop[textKey()] || '';
+try {
+  const saved = JSON.parse(safeGet('hw-backdrop') || '{}');
+  if (saved.id && !saved.mode) { // old format
+    const old = OLD_PRESETS[saved.id];
+    Object.assign(saved, saved.id === 'photo' ? { mode: 'photo' } : old ? { mode: 'gradient', g1: old[0], g2: old[1], dir: '135' } : { mode: 'plain' });
+  }
+  for (const k of ['color', 'g1', 'g2', 'textLight', 'textDark']) if (saved[k] && !HEX.test(saved[k])) delete saved[k];
+  backdrop = { ...backdrop, ...saved };
+} catch {}
 
+function backdropCss() {
+  const b = backdrop;
+  if (b.mode === 'photo') { const photo = safeGet('hw-backdrop-photo'); return photo ? `center / cover no-repeat url("${photo}")` : ''; }
+  if (b.mode === 'color') return b.color;
+  if (b.mode === 'gradient') return b.dir === 'radial' ? `radial-gradient(circle at center, ${b.g1}, ${b.g2})` : `linear-gradient(${Number(b.dir) || 135}deg, ${b.g1}, ${b.g2})`;
+  return '';
+}
 function applyBackdrop() {
-  const photo = backdrop.id === 'photo' ? safeGet('hw-backdrop-photo') : null;
-  const css = photo ? `center / cover no-repeat url("${photo}")` : BACKDROPS[backdrop.id]?.css || '';
+  const css = backdropCss();
+  const st = document.body.style;
   document.body.classList.toggle('has-bd', !!css);
-  document.body.classList.toggle('bd-sharp', !photo && !!BACKDROPS[backdrop.id]?.sharp); // patterns vanish under blur
-  document.body.style.setProperty('--bd', css || 'none');
-  document.body.style.setProperty('--bd-fade', `${Math.round(Math.min(0.95, Math.max(0.4, +backdrop.fade || 0.72)) * 100)}%`);
+  st.setProperty('--bd', css || 'none');
+  st.setProperty('--bd-fade', `${Math.round(Math.min(0.95, Math.max(0.4, +backdrop.fade || 0.72)) * 100)}%`);
+  // Your text color, with lighter shades of it for hints and labels
+  const text = textNow();
+  for (const [k, v] of Object.entries({ '--ink': text, '--ink-2': text && `color-mix(in srgb, ${text} 72%, var(--paper))`, '--ink-3': text && `color-mix(in srgb, ${text} 52%, var(--paper))` })) {
+    if (v) st.setProperty(k, v); else st.removeProperty(k);
+  }
+  const warn = document.getElementById('text-warn');
+  if (warn) warn.hidden = !text || contrast() >= 3;
 }
 function saveBackdrop(changes) {
   backdrop = { ...backdrop, ...changes };
-  safeSet('hw-backdrop', JSON.stringify({ id: backdrop.id, fade: backdrop.fade }));
+  const { mode, color, g1, g2, dir, fade, textLight, textDark } = backdrop;
+  safeSet('hw-backdrop', JSON.stringify({ mode, color, g1, g2, dir, fade, textLight, textDark }));
   applyBackdrop();
 }
 applyBackdrop();
+let lastDark = darkMq?.matches;
+const themeCheck = () => { if (darkMq?.matches === lastDark) return; lastDark = darkMq?.matches; applyBackdrop(); if (location.hash === '#/settings') render(); };
+darkMq?.addEventListener?.('change', themeCheck);
+document.addEventListener('visibilitychange', themeCheck); // backup, in case the switch happened while the tab was asleep
+
+// Roughly how readable your text color is on the panels (WCAG contrast ratio; 4.5+ is great, under 3 is hard).
+const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const lum = (c) => { const [r, g, b] = c.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+function contrast() {
+  const paperHex = getComputedStyle(document.documentElement).getPropertyValue('--paper').trim();
+  const paper = HEX.test(paperHex) ? rgb(paperHex) : [246, 247, 249];
+  const b = backdrop;
+  const under = b.mode === 'color' ? rgb(b.color) : b.mode === 'gradient' ? rgb(b.g1).map((v, i) => (v + rgb(b.g2)[i]) / 2) : paper;
+  const f = b.mode === 'plain' ? 1 : +b.fade || 0.72;
+  const panel = paper.map((v, i) => v * f + under[i] * (1 - f));
+  const [x, y] = [lum(rgb(textNow())), lum(panel)].sort((m, n) => n - m);
+  return (x + 0.05) / (y + 0.05);
+}
 
 function backdropCard() {
+  const b = backdrop;
   const photo = safeGet('hw-backdrop-photo');
-  const tile = (id, name, css) => `<button class="bd-tile ${backdrop.id === id ? 'on' : ''}" data-action="bd-pick" data-bd="${id}" aria-pressed="${backdrop.id === id}" title="${esc(name)}">
-      <span class="bd-swatch" style="background:${css ? esc(css) : 'var(--paper)'}"></span><span class="bd-name">${esc(name)}</span></button>`;
+  const text = textNow();
+  const inkNow = text || getComputedStyle(document.documentElement).getPropertyValue('--ink').trim();
+  const modes = { plain: 'Plain', color: 'Color', gradient: 'Gradient', photo: 'Photo' };
+  const pick = (id, label, value) => `<label class="color-pick"><input type="color" id="${id}" value="${esc(value)}"><span>${label}</span></label>`;
   return `
-    <p>Pick what shows behind your homework.</p>
-    <div class="bd-grid">
-      ${Object.entries(BACKDROPS).map(([id, b]) => tile(id, b.name, b.css)).join('')}
-      ${photo ? tile('photo', 'Your photo', `center / cover no-repeat url("${photo}")`) : ''}
+    <h4 class="sub">Backdrop</h4>
+    <div class="seg bd-modes" role="group" aria-label="Backdrop">
+      ${Object.entries(modes).map(([id, label]) => `<button data-action="bd-mode" data-mode="${id}" aria-pressed="${b.mode === id}">${label}</button>`).join('')}
     </div>
-    <div class="row">
-      <button class="btn" data-action="bd-upload">${photo ? 'Use a different photo' : 'Use your own photo'}</button>
+    ${b.mode === 'color' ? `<div class="row">${pick('bd-color', 'Color', b.color)}</div>` : ''}
+    ${b.mode === 'gradient' ? `<div class="row bd-grad">
+      ${pick('bd-g1', 'First color', b.g1)}
+      ${pick('bd-g2', 'Second color', b.g2)}
+      <label class="color-pick">Direction <select id="bd-dir" class="field">${Object.entries(GRAD_DIRS).map(([v, n]) => `<option value="${v}" ${String(b.dir) === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+      <button class="link-btn" data-action="bd-swap">Swap colors</button>
+    </div>` : ''}
+    ${b.mode === 'photo' ? `<div class="row">
+      <button class="btn" data-action="bd-upload">${photo ? 'Use a different photo' : 'Choose a photo'}</button>
       ${photo ? `<button class="link-btn" data-action="bd-photo-off">Remove photo</button>` : ''}
-      <input type="file" id="bd-file" accept="image/*" hidden>
+    </div>` : ''}
+    <input type="file" id="bd-file" accept="image/*" hidden>
+    ${b.mode !== 'plain' ? `<label class="bd-fade">How much shows through
+      <input type="range" id="bd-fade" min="40" max="95" step="1" value="${Math.round(135 - b.fade * 100)}">
+    </label>` : ''}
+
+    <h4 class="sub">Text color</h4>
+    <div class="row">
+      ${pick('text-color', text ? 'Your color' : 'Default', inkNow)}
+      ${text ? `<button class="link-btn" data-action="text-reset">Back to default</button>` : ''}
     </div>
-    ${backdrop.id !== 'plain' ? `<label class="bd-fade">How much shows through
-      <input type="range" id="bd-fade" min="40" max="95" step="1" value="${Math.round(135 - backdrop.fade * 100)}" aria-describedby="bd-fade-hint">
-    </label>
-    <p class="hint" id="bd-fade-hint">Turn it down if the backdrop makes your homework hard to read.</p>` : ''}
+    <p class="hint">For ${darkMq?.matches ? 'dark' : 'light'} mode. ${darkMq?.matches ? 'Light' : 'Dark'} mode keeps its own text color.</p>
+    <p class="bad" id="text-warn" ${!text || contrast() >= 3 ? 'hidden' : ''}>This text color is hard to read on your backdrop. Try a darker or lighter one.</p>
     <p class="hint">Saved on this device only.</p>`;
 }
 
@@ -1068,7 +1124,7 @@ function renderSettings() {
     <section class="card"><h3>Notifications</h3>${notif}</section>
     ${isOwn() ? `<section class="card"><h3>School schedule</h3>${scheduleCard()}</section>
     ${ONLINE ? `<section class="card"><h3>Canvas</h3>${canvasCard()}</section>` : ''}` : `<section class="card"><h3>Moodle</h3>${moodleCard}</section>`}
-    <section class="card"><h3>Backdrop</h3>${backdropCard()}</section>
+    <section class="card"><h3>Colors</h3>${backdropCard()}</section>
     <section class="card"><h3>Backup</h3>
       <div class="row">
         <button class="btn" data-action="export">Export backup</button>
@@ -1077,7 +1133,7 @@ function renderSettings() {
       <p class="hint">Import adds everything from a backup file to what's already here.</p>
     </section>
     ${ONLINE ? `<section class="card"><h3>Share with a friend</h3>
-      <p>Send a friend the link. VCS students log in with their Moodle key, and anyone else can log their own homework. Everyone only sees their own list.</p>
+      <p>Send a friend the link. VCS students log in with their Moodle key, students at Canvas schools with their Canvas link, and anyone else can log their own homework. Everyone only sees their own list.</p>
       <div class="row"><button class="btn" data-action="share">Share the link</button></div>
     </section>` : ''}
     <section class="card"><h3>About</h3>
@@ -1413,9 +1469,14 @@ document.addEventListener('click', async (e) => {
       catch (err) { toast(err.message); }
       break;
     }
-    case 'bd-pick': saveBackdrop({ id: el.dataset.bd }); render(); break;
+    case 'bd-mode':
+      saveBackdrop({ mode: el.dataset.mode });
+      if (el.dataset.mode === 'photo' && !safeGet('hw-backdrop-photo')) $('#bd-file')?.click();
+      render(); break;
+    case 'bd-swap': saveBackdrop({ g1: backdrop.g2, g2: backdrop.g1 }); render(); break;
     case 'bd-upload': $('#bd-file')?.click(); break;
-    case 'bd-photo-off': safeSet('hw-backdrop-photo', null); saveBackdrop({ id: backdrop.id === 'photo' ? 'plain' : backdrop.id }); render(); break;
+    case 'bd-photo-off': safeSet('hw-backdrop-photo', null); saveBackdrop({ mode: 'plain' }); render(); break;
+    case 'text-reset': saveBackdrop({ [textKey()]: '' }); render(); break;
     case 'logout': {
       await api('DELETE', '/api/session').catch(() => {});
       forgetDevice();
@@ -1526,19 +1587,24 @@ document.addEventListener('click', async (e) => {
 document.addEventListener('input', (e) => {
   // range 40–95 → panels 95%–40% solid
   if (e.target.id === 'bd-fade') { saveBackdrop({ fade: (135 - +e.target.value) / 100 }); return; }
+  // color pickers update live as you drag, without redrawing the page (that would close the picker)
+  const colorKey = { 'bd-color': 'color', 'bd-g1': 'g1', 'bd-g2': 'g2', 'text-color': textKey() }[e.target.id];
+  if (colorKey && HEX.test(e.target.value)) { saveBackdrop({ [colorKey]: e.target.value.toLowerCase() }); return; }
   if (!e.target.matches('.school-search')) return;
   const q = e.target.value.trim().toLowerCase();
   document.querySelectorAll('.school-btn').forEach((b) => { b.hidden = !!q && !b.textContent.toLowerCase().includes(q); });
 });
 
 document.addEventListener('change', async (e) => {
+  if (e.target.id === 'bd-dir') { saveBackdrop({ dir: e.target.value }); return; }
+  if (e.target.id === 'text-color') { render(); return; } // show "Back to default" once you've picked one
   if (e.target.id === 'bd-file') {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
       const data = await photoToDataUrl(file);
       localStorage.setItem('hw-backdrop-photo', data);
-      saveBackdrop({ id: 'photo' });
+      saveBackdrop({ mode: 'photo' });
       render();
     } catch {
       toast("That photo couldn't be used. Try a smaller JPG or PNG.");
