@@ -14,6 +14,7 @@ export default async function handler(req, res) {
       authed: !!p,
       user: p ? {
         id: uid, name: p.name, kind: p.moodle ? 'moodle' : 'own', passkeys: (p.passkeys || []).length,
+        nameSet: !!p.nameSet, moodleName: p.moodle?.fullname || null,
         feed: p.moodle ? null : feedInfo(p),
       } : null,
       vapidPublicKey: process.env.VAPID_PUBLIC_KEY || null,

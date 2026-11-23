@@ -1169,7 +1169,13 @@ function renderSettings() {
       </div>
     </section>
     ${ONLINE && me ? `<section class="card"><h3>Account</h3>
-      <p>Logged in as <b>${esc(me.name)}</b>.</p>
+      <p>Logged in as <b>${esc(me.name)}</b>. <button class="link-btn" data-action="rename-open">Change name</button></p>
+      <form class="row" data-form="rename" hidden>
+        <input name="name" class="field" maxlength="40" value="${esc(me.name)}" autocomplete="given-name" aria-label="Your name" required>
+        <button class="btn">Save</button>
+        <button type="button" class="link-btn" data-action="rename-cancel">Cancel</button>
+      </form>
+      ${me.kind === 'moodle' ? `<p class="hint">This only changes your name here. ${me.nameSet && me.moodleName ? `Moodle calls you ${esc(me.moodleName)}. <button class="link-btn" data-action="rename-moodle">Use that instead</button>` : 'Moodle keeps your real name.'}</p>` : ''}
       <div class="row"><button class="primary" data-action="link-device">Log in on another device</button></div>
       <div id="link-code"></div>
       ${isOwn() && passkeysSupported() ? `<p class="hint">You have ${me.passkeys || 0} passkey${me.passkeys === 1 ? '' : 's'}. After logging in on a new device with a code, add a passkey there so you can log in on it directly.</p>
@@ -1510,6 +1516,17 @@ document.addEventListener('click', async (e) => {
     case 'bd-upload': $('#bd-file')?.click(); break;
     case 'bd-photo-off': safeSet('hw-backdrop-photo', null); saveBackdrop({ mode: 'plain' }); render(); break;
     case 'text-reset': saveBackdrop({ [textKey()]: '' }); render(); break;
+    case 'rename-open': {
+      const f = document.querySelector('[data-form=rename]');
+      f.hidden = false; el.hidden = true;
+      f.name.focus(); f.name.select();
+      break;
+    }
+    case 'rename-cancel': render(); break;
+    case 'rename-moodle':
+      try { const r = await api('PUT', '/api/account', { name: null }); me = { ...me, name: r.name, nameSet: false }; toast('Using your Moodle name'); render(); }
+      catch (err) { toast(err.message); }
+      break;
     case 'logout': {
       await api('DELETE', '/api/session').catch(() => {});
       forgetDevice();
@@ -1682,6 +1699,16 @@ document.addEventListener('submit', async (e) => {
       btn.disabled = false;
       btn.textContent = 'Log in';
     }
+    return;
+  }
+  if (f.dataset.form === 'rename') {
+    e.preventDefault();
+    try {
+      const r = await api('PUT', '/api/account', { name: f.name.value });
+      me = { ...me, name: r.name, nameSet: r.nameSet };
+      toast('Name changed');
+      render();
+    } catch (err) { toast(err.message); }
     return;
   }
   if (f.dataset.form === 'login-feed') {
@@ -1868,7 +1895,7 @@ async function boot(again = false) {
     me = s.user;
     school = s.school || null;
     schedule = s.schedule || null;
-    moodle = me?.kind === 'moodle' ? { connected: true, name: me.name } : { connected: false };
+    moodle = me?.kind === 'moodle' ? { connected: true, name: me.moodleName || me.name } : { connected: false };
     feed = me?.feed || null;
   } catch {
     return; // offline — keep showing the cached copy

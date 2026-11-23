@@ -77,12 +77,12 @@ export async function connectKey(token, expectUid) {
   const sameKey = existing?.moodle?.tokenEnc && safeDecrypt(existing.moodle.tokenEnc) === token;
   await saveProfile(uid, {
     ...existing,
-    name: info.fullname,
+    name: existing?.nameSet ? existing.name : info.fullname, // keep a name you picked yourself
     createdAt: existing?.createdAt || Date.now(),
-    moodle: { tokenEnc: sameKey ? existing.moodle.tokenEnc : encrypt(token), fp, userid: info.userid, connectedAt: Date.now() },
+    moodle: { tokenEnc: sameKey ? existing.moodle.tokenEnc : encrypt(token), fp, userid: info.userid, fullname: info.fullname, connectedAt: Date.now() },
   });
   await redis.sadd(K.users, uid);
-  return { uid, fp, name: info.fullname };
+  return { uid, fp, name: existing?.nameSet ? existing.name : info.fullname };
 }
 
 function safeDecrypt(blob) {

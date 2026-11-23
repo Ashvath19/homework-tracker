@@ -1,4 +1,5 @@
-// PUT    /api/account { name?, schedule? } → change your name or school schedule ("log your own" accounts)
+// PUT    /api/account { name?, schedule? } → change the name the site calls you (null = back to your Moodle name),
+//                                           or your school schedule ("log your own" accounts)
 // PUT    /api/account { feed: link | null } → connect (or disconnect) a Canvas or Schoology calendar link
 // DELETE /api/account → permanently delete your account and all your data
 import crypto from 'node:crypto';
@@ -14,10 +15,16 @@ export default async function handler(req, res) {
     const p = await getProfile(uid);
     const body = req.body || {};
     if (body.name !== undefined) {
-      if (p.moodle) return res.status(400).json({ error: 'Your name comes from Moodle.' });
-      const name = cleanName(body.name);
-      if (!name) return res.status(400).json({ error: 'Type a name.' });
-      p.name = name;
+      // Moodle accounts can go back to their Moodle name by sending null.
+      if (body.name === null && p.moodle) {
+        p.name = p.moodle.fullname || p.name;
+        delete p.nameSet;
+      } else {
+        const name = cleanName(body.name);
+        if (!name) return res.status(400).json({ error: 'Type a name.' });
+        p.name = name;
+        p.nameSet = true; // logging in with Moodle again keeps the name you picked
+      }
     }
     if (body.schedule !== undefined) {
       if (p.moodle) return res.status(400).json({ error: 'Your schedule comes from the VCS calendar.' });
@@ -59,7 +66,7 @@ export default async function handler(req, res) {
       return res.json({ ok: true, feed: feedInfo(r.profile), ...sync });
     }
     await saveProfile(uid, p);
-    return res.json({ ok: true, name: p.name, schedule: p.schedule || null });
+    return res.json({ ok: true, name: p.name, nameSet: !!p.nameSet, schedule: p.schedule || null });
   }
   if (req.method !== 'DELETE') return res.status(405).end();
   await deleteUser(uid);
