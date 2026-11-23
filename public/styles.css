@@ -463,3 +463,18 @@ a.btn { text-decoration: none; display: inline-block; color: var(--ink); }
 .cal-letter { position: static; font-size: 8.5px; line-height: 1; letter-spacing: .02em; }
 .school-search { width: 100%; max-width: 420px; margin-top: 6px; }
 .school-btn[hidden] { display: none; }
+
+/* ---------- Backdrop: a picture or gradient behind see-through panels ---------- */
+body.has-bd::before { content: ''; position: fixed; inset: 0; z-index: -1; background: var(--bd); }
+body.has-bd .sidebar, body.has-bd main, body.has-bd .cal-panel {
+  background: color-mix(in srgb, var(--paper) var(--bd-fade, 72%), transparent);
+  -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+}
+body.bd-sharp .sidebar, body.bd-sharp main, body.bd-sharp .cal-panel { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.bd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 10px; margin: 0 0 14px; }
+.bd-tile { display: flex; flex-direction: column; gap: 5px; padding: 0; border: none; background: none; cursor: pointer; color: var(--ink-2); font: inherit; font-size: 12.5px; text-align: center; }
+.bd-swatch { display: block; height: 52px; border-radius: 9px; box-shadow: inset 0 0 0 1px var(--rule); }
+.bd-tile.on .bd-swatch { box-shadow: 0 0 0 2px var(--sheet), 0 0 0 4px var(--ink); }
+.bd-tile.on { color: var(--ink); font-weight: 600; }
+.bd-fade { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; font-size: 14px; font-weight: 500; }
+.bd-fade input { width: 100%; max-width: 320px; accent-color: var(--pen); }

@@ -26,6 +26,9 @@ let tagFilter = null;
 let authed = false;
 let me = null;              // { id, name }
 let moodle = { connected: false };
+let canvas = null;          // { host, name } when a "log your own" account reads a Canvas calendar feed
+const linked = () => moodle.connected || !!canvas;
+const srcName = () => (moodle.connected ? 'Moodle' : 'Canvas');
 let meta = {};
 let vapidKey = null;
 let school = null;          // { today, letter: 'A'|'B'|'C'|null, nextA, nextB }
@@ -100,7 +103,7 @@ async function pull() {
 const STALE_MS = 2 * 60 * 60 * 1000;
 let lastAutoSync = 0;
 async function syncIfStale() {
-  if (!ONLINE || !authed || !moodle.connected) return;
+  if (!ONLINE || !authed || !linked()) return;
   if (meta.lastSync && Date.now() - meta.lastSync < STALE_MS) return;
   if (Date.now() - lastAutoSync < 10 * 60 * 1000) return;
   lastAutoSync = Date.now();
@@ -621,9 +624,9 @@ function renderSidebar(active) {
       <span>${esc(c.name)}</span>
       <span class="count">${counts[c.id] || ''}</span>
     </a>`).join('') || `<p class="subtitle" style="margin:4px 10px;font-size:13px">No classes yet</p>`;
-  $('#sync-status').textContent = !moodle.connected ? (ONLINE && !isOwn() ? 'Moodle not connected' : '')
-    : meta.lastError ? '⚠️ Moodle sync problem'
-    : meta.lastSync ? `Moodle checked ${ago(meta.lastSync)}` : '';
+  $('#sync-status').textContent = !linked() ? (ONLINE && !isOwn() ? 'Moodle not connected' : '')
+    : meta.lastError ? `⚠️ ${srcName()} sync problem`
+    : meta.lastSync ? `${srcName()} checked ${ago(meta.lastSync)}` : '';
 }
 
 function quickAddForm(classId) {
@@ -660,13 +663,14 @@ function taskRow(t, showClass) {
   const due = dueInfo(t.due);
   const tag = TAGS[t.tag] || TAGS.homework;
   const title = `<span class="tag tag-${t.tag || 'homework'}">${tag.label}</span>${esc(t.title)}`;
-  const meta = (showClass && c) || t.notes || t.doneBy === 'moodle' || t.source === 'lesson' || t.files?.length || t.study?.length ? `<span class="task-meta">
+  const meta = (showClass && c) || t.notes || t.doneBy === 'moodle' || t.doneBy === 'canvas' || t.source === 'lesson' || t.files?.length || t.study?.length ? `<span class="task-meta">
           ${showClass && c ? `<span class="chip"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}</span>` : ''}
           ${t.source === 'lesson' && !t.done ? `<span title="From the lesson plan for ${esc(t.chapter || '')}">Lesson plan</span>` : ''}
           ${!t.done && (t.study?.length) ? `<span>${t.study.length} study file${t.study.length === 1 ? '' : 's'}</span>` : ''}
           ${!t.done && !t.study?.length && t.files?.length ? `<span>${t.files.length} file${t.files.length === 1 ? '' : 's'}</span>` : ''}
           ${t.notes ? `<span title="${esc(t.notes)}">Has notes</span>` : ''}
           ${t.done && t.doneBy === 'moodle' ? `<span>Submitted on Moodle</span>` : ''}
+          ${t.done && t.doneBy === 'canvas' ? `<span>Removed from Canvas</span>` : ''}
         </span>` : '';
   return `
     <li class="task ${t.done ? 'done' : ''} ${tag.big ? 'big' : ''}" data-id="${t.id}">
@@ -700,6 +704,104 @@ function completedSection(list, showClass) {
     </details>`;
 }
 
+// ---------- backdrop (saved on this device only) ----------
+const BACKDROPS = {
+  plain:    { name: 'Plain', css: '' },
+  sky:      { name: 'Sky', css: 'linear-gradient(160deg, #a1c4fd, #c2e9fb)' },
+  sunset:   { name: 'Sunset', css: 'linear-gradient(160deg, #ff9a8b, #ff6a88 45%, #ffc796)' },
+  mint:     { name: 'Mint', css: 'linear-gradient(160deg, #84fab0, #8fd3f4)' },
+  lavender: { name: 'Lavender', css: 'linear-gradient(160deg, #e0c3fc, #8ec5fc)' },
+  peach:    { name: 'Peach', css: 'linear-gradient(160deg, #ffecd2, #fcb69f)' },
+  forest:   { name: 'Forest', css: 'linear-gradient(160deg, #134e5e, #71b280)' },
+  night:    { name: 'Night', css: 'linear-gradient(160deg, #0f2027, #203a43, #2c5364)' },
+  graph:    { name: 'Graph paper', sharp: true, css: 'linear-gradient(rgba(39,71,208,.45) 1px, transparent 1px) 0 0 / 22px 22px, linear-gradient(90deg, rgba(39,71,208,.45) 1px, transparent 1px) 0 0 / 22px 22px, #e8edf8' },
+  dots:     { name: 'Dots', sharp: true, css: 'radial-gradient(rgba(23,32,51,.6) 1.4px, transparent 1.9px) 0 0 / 18px 18px, #efece4' },
+};
+let backdrop = { id: 'plain', fade: 0.72 };
+try { backdrop = { ...backdrop, ...JSON.parse(safeGet('hw-backdrop') || '{}') }; } catch {}
+
+function applyBackdrop() {
+  const photo = backdrop.id === 'photo' ? safeGet('hw-backdrop-photo') : null;
+  const css = photo ? `center / cover no-repeat url("${photo}")` : BACKDROPS[backdrop.id]?.css || '';
+  document.body.classList.toggle('has-bd', !!css);
+  document.body.classList.toggle('bd-sharp', !photo && !!BACKDROPS[backdrop.id]?.sharp); // patterns vanish under blur
+  document.body.style.setProperty('--bd', css || 'none');
+  document.body.style.setProperty('--bd-fade', `${Math.round(Math.min(0.95, Math.max(0.4, +backdrop.fade || 0.72)) * 100)}%`);
+}
+function saveBackdrop(changes) {
+  backdrop = { ...backdrop, ...changes };
+  safeSet('hw-backdrop', JSON.stringify({ id: backdrop.id, fade: backdrop.fade }));
+  applyBackdrop();
+}
+applyBackdrop();
+
+function backdropCard() {
+  const photo = safeGet('hw-backdrop-photo');
+  const tile = (id, name, css) => `<button class="bd-tile ${backdrop.id === id ? 'on' : ''}" data-action="bd-pick" data-bd="${id}" aria-pressed="${backdrop.id === id}" title="${esc(name)}">
+      <span class="bd-swatch" style="background:${css ? esc(css) : 'var(--paper)'}"></span><span class="bd-name">${esc(name)}</span></button>`;
+  return `
+    <p>Pick what shows behind your homework.</p>
+    <div class="bd-grid">
+      ${Object.entries(BACKDROPS).map(([id, b]) => tile(id, b.name, b.css)).join('')}
+      ${photo ? tile('photo', 'Your photo', `center / cover no-repeat url("${photo}")`) : ''}
+    </div>
+    <div class="row">
+      <button class="btn" data-action="bd-upload">${photo ? 'Use a different photo' : 'Use your own photo'}</button>
+      ${photo ? `<button class="link-btn" data-action="bd-photo-off">Remove photo</button>` : ''}
+      <input type="file" id="bd-file" accept="image/*" hidden>
+    </div>
+    ${backdrop.id !== 'plain' ? `<label class="bd-fade">How much shows through
+      <input type="range" id="bd-fade" min="40" max="95" step="1" value="${Math.round(135 - backdrop.fade * 100)}" aria-describedby="bd-fade-hint">
+    </label>
+    <p class="hint" id="bd-fade-hint">Turn it down if the backdrop makes your homework hard to read.</p>` : ''}
+    <p class="hint">Saved on this device only.</p>`;
+}
+
+// Shrink photos before saving, so they fit in the browser's storage and load fast.
+async function photoToDataUrl(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = url; });
+    const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * scale);
+    c.height = Math.round(img.naturalHeight * scale);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.8);
+  } finally { URL.revokeObjectURL(url); }
+}
+
+function canvasCard() {
+  const how = `<ol class="hint">
+      <li>Open your school's Canvas website (not the app), for example <a href="https://esuhsd.instructure.com/calendar" target="_blank" rel="noopener">esuhsd.instructure.com</a>, and go to <b>Calendar</b>.</li>
+      <li>Click <b>Calendar Feed</b> at the bottom right, under the list of calendars.</li>
+      <li>Copy the link it shows and paste it here.</li>
+    </ol>`;
+  const form = (label) => `<form class="row" data-form="canvas">
+      <input name="feed" placeholder="https://…instructure.com/feeds/calendars/user_….ics" autocomplete="off" spellcheck="false" required class="field">
+      <button class="btn">${label}</button>
+    </form>`;
+  if (!canvas) return `
+    <p>If your school uses Canvas, connect it and your assignments show up here on their own, sorted into classes.</p>
+    ${how}
+    ${form('Connect')}
+    <p class="hint">The link only shows your Canvas calendar. It can't see your grades or messages, or turn anything in. Canvas doesn't share what you've submitted through it, so check things off yourself.</p>`;
+  return `
+    <p>Connected${canvas.name ? ` as <b>${esc(canvas.name)}</b>` : ''} on ${esc(canvas.host)}. ${meta.lastSync ? `Last checked ${ago(meta.lastSync)}${meta.lastCount != null ? `, ${meta.lastCount} upcoming assignment${meta.lastCount === 1 ? '' : 's'}` : ''}.` : 'Not checked yet.'}
+       It checks again every 2 hours on its own.</p>
+    ${meta.lastError ? `<p class="bad">${esc(meta.lastError)}</p>` : ''}
+    <div class="row">
+      <button class="btn" data-action="sync-now">Check Canvas now</button>
+      <button class="link-btn" data-action="canvas-off">Disconnect</button>
+    </div>
+    <p class="hint">Canvas doesn't share what you've turned in, so check things off yourself.</p>
+    <details ${meta.lastError ? 'open' : ''}>
+      <summary class="hint">Use a different Canvas link</summary>
+      ${how}
+      ${form('Save link')}
+    </details>`;
+}
+
 function renderDashboard() {
   const main = $('#main');
   if (!classes().length) {
@@ -707,7 +809,7 @@ function renderDashboard() {
       <div class="page-header"><h2>Dashboard</h2></div>
       <p class="subtitle">Everything you have due, in date order.</p>
       <div class="empty">
-        <p>${ONLINE && isOwn() ? 'Add your classes to get started. Then add homework as you get it.' : ONLINE ? 'Nothing from Moodle yet. Your classes show up here as soon as teachers post assignments, or you can add them yourself.' : 'Start by adding your classes.'}</p>
+        <p>${ONLINE && isOwn() && canvas ? 'Nothing from Canvas yet. Your classes show up here as soon as teachers post assignments, or you can add them yourself.' : ONLINE && isOwn() ? 'Add your classes to get started, or connect Canvas in Settings if your school uses it. Then add homework as you get it.' : ONLINE ? 'Nothing from Moodle yet. Your classes show up here as soon as teachers post assignments, or you can add them yourself.' : 'Start by adding your classes.'}</p>
         <div class="row" style="justify-content:center">
           <button class="btn" data-action="new-class">Add a class</button>
         </div>
@@ -904,7 +1006,7 @@ function renderSettings() {
       <button class="btn" data-action="push-test" id="push-test" hidden>Send a test</button>
       <button class="link-btn" data-action="push-off" id="push-off" hidden>Turn off on this device</button>
     </div>
-    <p class="hint">You'll get a ping when new homework shows up on Moodle, and a reminder at 6pm listing what's due tomorrow.</p>`;
+    <p class="hint">${linked() ? `You'll get a ping when new homework shows up on ${srcName()}, and a reminder at 6pm listing what's due tomorrow.` : `You'll get a reminder at 6pm listing what's due tomorrow.`}</p>`;
 
   const moodleCard = !ONLINE ? `<p>Moodle sync only works on the website version.</p>` : `
     <p>Connected as <b>${esc(moodle.name || 'you')}</b>. ${meta.lastSync ? `Last checked ${ago(meta.lastSync)}${meta.lastCount != null ? `, ${meta.lastCount} upcoming item${meta.lastCount === 1 ? '' : 's'}` : ''}.` : 'Not checked yet.'}
@@ -924,7 +1026,9 @@ function renderSettings() {
   $('#main').innerHTML = `
     <div class="page-header"><h2>Settings</h2></div>
     <section class="card"><h3>Notifications</h3>${notif}</section>
-    ${isOwn() ? `<section class="card"><h3>School schedule</h3>${scheduleCard()}</section>` : `<section class="card"><h3>Moodle</h3>${moodleCard}</section>`}
+    ${isOwn() ? `<section class="card"><h3>School schedule</h3>${scheduleCard()}</section>
+    ${ONLINE ? `<section class="card"><h3>Canvas</h3>${canvasCard()}</section>` : ''}` : `<section class="card"><h3>Moodle</h3>${moodleCard}</section>`}
+    <section class="card"><h3>Backdrop</h3>${backdropCard()}</section>
     <section class="card"><h3>Backup</h3>
       <div class="row">
         <button class="btn" data-action="export">Export backup</button>
@@ -1051,6 +1155,7 @@ function openDetail(id) {
       <button class="primary" data-action="detail-done">${t.done ? 'Mark not done' : 'Mark done'}</button>
       <button class="btn" data-action="detail-edit">Edit</button>
       ${t.source === 'moodle' && t.url ? `<a class="link-btn" href="${esc(t.url)}" target="_blank" rel="noopener">Open on Moodle</a>` : ''}
+      ${t.source === 'canvas' && t.url ? `<a class="link-btn" href="${esc(t.url)}" target="_blank" rel="noopener">Open on Canvas</a>` : ''}
     </div>`;
   $('#detail-dialog').showModal();
 }
@@ -1077,7 +1182,7 @@ function openTaskDialog(id) {
   const link = $('#task-link');
   const href = t.link || t.url;
   link.hidden = !href;
-  if (href) { link.href = href; link.textContent = t.link ? 'Open linked file' : 'Open in Moodle'; }
+  if (href) { link.href = href; link.textContent = t.link ? 'Open linked file' : t.source === 'canvas' ? 'Open in Canvas' : 'Open in Moodle'; }
   $('#task-dialog').showModal();
 }
 $('#task-dialog').addEventListener('close', () => {
@@ -1228,7 +1333,7 @@ document.addEventListener('click', async (e) => {
         await pull();
         toast(r.added ? `Found ${r.added} new assignment${r.added === 1 ? '' : 's'}` : 'Up to date');
       } catch (err) {
-        toast(`Couldn't check Moodle: ${err.message}`);
+        toast(`Couldn't check ${srcName()}: ${err.message}`);
         await pull();
       }
       render();
@@ -1262,6 +1367,15 @@ document.addEventListener('click', async (e) => {
       refreshPushState();
       break;
     }
+    case 'canvas-off': {
+      if (!confirm("Disconnect Canvas? Homework it already added stays, but new assignments won't show up on their own.")) break;
+      try { await api('PUT', '/api/account', { canvas: null }); canvas = null; await pull(); toast('Canvas disconnected'); render(); }
+      catch (err) { toast(err.message); }
+      break;
+    }
+    case 'bd-pick': saveBackdrop({ id: el.dataset.bd }); render(); break;
+    case 'bd-upload': $('#bd-file')?.click(); break;
+    case 'bd-photo-off': safeSet('hw-backdrop-photo', null); saveBackdrop({ id: backdrop.id === 'photo' ? 'plain' : backdrop.id }); render(); break;
     case 'logout': {
       await api('DELETE', '/api/session').catch(() => {});
       forgetDevice();
@@ -1370,12 +1484,27 @@ document.addEventListener('click', async (e) => {
 });
 
 document.addEventListener('input', (e) => {
+  // range 40–95 → panels 95%–40% solid
+  if (e.target.id === 'bd-fade') { saveBackdrop({ fade: (135 - +e.target.value) / 100 }); return; }
   if (!e.target.matches('.school-search')) return;
   const q = e.target.value.trim().toLowerCase();
   document.querySelectorAll('.school-btn').forEach((b) => { b.hidden = !!q && !b.textContent.toLowerCase().includes(q); });
 });
 
-document.addEventListener('change', (e) => {
+document.addEventListener('change', async (e) => {
+  if (e.target.id === 'bd-file') {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const data = await photoToDataUrl(file);
+      localStorage.setItem('hw-backdrop-photo', data);
+      saveBackdrop({ id: 'photo' });
+      render();
+    } catch {
+      toast("That photo couldn't be used. Try a smaller JPG or PNG.");
+    }
+    return;
+  }
   const qa = e.target.closest('.quick-add');
   if (qa && e.target.name === 'classId' && !qa.due.dataset.touched) qa.due.value = nextMeeting(classById(e.target.value));
   if (qa && e.target.name === 'due') qa.due.dataset.touched = '1';
@@ -1448,6 +1577,25 @@ document.addEventListener('submit', async (e) => {
       toast('Schedule saved');
       location.hash = '#/';
     } catch (err) { toast(err.message); }
+    return;
+  }
+  if (f.dataset.form === 'canvas') {
+    e.preventDefault();
+    const btn = f.querySelector('button');
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Checking…';
+    try {
+      const r = await api('PUT', '/api/account', { canvas: f.feed.value });
+      canvas = r.canvas;
+      await pull();
+      toast(r.added ? `Connected. Found ${r.added} assignment${r.added === 1 ? '' : 's'}.` : 'Connected to Canvas');
+      render();
+    } catch (err) {
+      toast(err.message);
+      btn.disabled = false;
+      btn.textContent = label;
+    }
     return;
   }
   if (f.dataset.form === 'moodle') {
@@ -1560,6 +1708,7 @@ async function boot(again = false) {
     school = s.school || null;
     schedule = s.schedule || null;
     moodle = me?.kind === 'moodle' ? { connected: true, name: me.name } : { connected: false };
+    canvas = me?.canvas || null;
   } catch {
     return; // offline — keep showing the cached copy
   }

@@ -8,6 +8,7 @@ import {
   decrypt, sendPush, ymd, addDays, dueLabel, TZ,
 } from './_lib.js';
 import { diffWithMoodle } from './_moodle.js';
+import { fetchFeed, diffWithCanvas } from './_canvas.js';
 import { diffLessonPlans, LP_VERSION } from './_lessons.js';
 
 const ICONS = { homework: '📄', reading: '📖', essay: '✍️', lab: '🧪', project: '🛠️', quiz: '❓', test: '🚨' };
@@ -66,7 +67,8 @@ export default async function handler(req, res) {
 
 export async function syncUser(uid, { notify }) {
   const profile = await getProfile(uid);
-  if (!profile?.moodle?.tokenEnc) return { skipped: 'no moodle' };
+  if (profile?.canvas?.feedEnc && !profile.moodle) return finishSync(uid, await canvasDiff(uid, profile), notify);
+  if (!profile?.moodle?.tokenEnc) return { skipped: 'nothing to check' };
   const token = decrypt(profile.moodle.tokenEnc);
 
   let diff;
@@ -93,6 +95,24 @@ export async function syncUser(uid, { notify }) {
     await putState(uid, s);
     throw e;
   }
+  return finishSync(uid, diff, notify);
+}
+
+// "Log your own" accounts connected to Canvas: read their calendar feed.
+async function canvasDiff(uid, profile) {
+  try {
+    const feed = await fetchFeed(decrypt(profile.canvas.feedEnc));
+    return diffWithCanvas(await getState(uid), feed, ymd(new Date()));
+  } catch (e) {
+    const s = await getState(uid);
+    const msg = /stopped working|bad feed/i.test(e.message) ? 'Your Canvas link stopped working. Paste a new one in Settings.' : `Couldn't reach Canvas: ${e.message}`;
+    s.meta = { ...s.meta, lastError: msg, lastErrorAt: Date.now() };
+    await putState(uid, s);
+    throw e;
+  }
+}
+
+async function finishSync(uid, diff, notify) {
   const { changedClasses, changedTasks, newTasks, eventCount } = diff;
 
   // re-read right before writing so we don't clobber edits made while Moodle was loading
@@ -107,7 +127,7 @@ export async function syncUser(uid, { notify }) {
 
   // don't spam on the very first sync, when *everything* is new
   if (notify && newTasks.length && !firstSync) {
-    const className = (id) => merged.classes.find((c) => c.id === id)?.name || 'Moodle';
+    const className = (id) => merged.classes.find((c) => c.id === id)?.name || 'class';
     if (newTasks.length === 1) {
       const t = newTasks[0];
       await sendPush(uid, { title: `New in ${className(t.classId)}`, body: `${ICONS[t.tag] || ''} ${t.title} — due ${dueLabel(t.due)}`, url: '/', tag: 'new' });

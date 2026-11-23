@@ -68,7 +68,7 @@ export function tidyName(cls, fullname) {
 }
 
 // Moodle often uses 12:00 AM to mean "end of the previous day".
-function dueFromTimestamp(sec) {
+export function dueFromTimestamp(sec) {
   const d = new Date(sec * 1000);
   const hm = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d);
   return ymd(hm === '00:00' ? new Date(d.getTime() - 60000) : d);

@@ -1,7 +1,10 @@
 // PUT    /api/account { name?, schedule? } → change your name or school schedule ("log your own" accounts)
+// PUT    /api/account { canvas: link | null } → connect (or disconnect) a Canvas calendar feed
 // DELETE /api/account → permanently delete your account and all your data
-import { requireUser, deleteUser, endSession, getProfile, saveProfile } from './_lib.js';
+import { requireUser, deleteUser, endSession, getProfile, saveProfile, encrypt, getState, putState, tooManyFailures } from './_lib.js';
 import { cleanName } from './_passkey.js';
+import { cleanFeedUrl, fetchFeed } from './_canvas.js';
+import { syncUser } from './sync.js';
 
 export default async function handler(req, res) {
   const uid = await requireUser(req, res);
@@ -20,6 +23,31 @@ export default async function handler(req, res) {
       const s = cleanSchedule(body.schedule);
       if (!s) return res.status(400).json({ error: "That schedule doesn't look right." });
       p.schedule = s;
+    }
+    if (body.canvas !== undefined) {
+      if (p.moodle) return res.status(400).json({ error: 'Your homework already comes from Moodle.' });
+      if (body.canvas === null) {
+        delete p.canvas;
+        await saveProfile(uid, p);
+        const s = await getState(uid);
+        s.meta = { ...s.meta, lastSync: null, lastError: null, lastCount: null };
+        await putState(uid, s);
+        return res.json({ ok: true, canvas: null });
+      }
+      const limit = await tooManyFailures(req, 'canvas', 20);
+      if (limit.blocked) return res.status(429).json({ error: 'Too many tries. Wait an hour and try again.' });
+      const feed = cleanFeedUrl(body.canvas);
+      if (!feed) { await limit.record(); return res.status(400).json({ error: "That isn't a Canvas calendar feed link. It should start with https:// and end in .ics." }); }
+      let cal;
+      try { cal = await fetchFeed(feed.url); } catch {
+        await limit.record();
+        return res.status(400).json({ error: "Canvas didn't accept that link. Copy it again from Calendar Feed on Canvas." });
+      }
+      p.canvas = { feedEnc: encrypt(feed.url), host: feed.host, name: cal.name || '', connectedAt: Date.now() };
+      await saveProfile(uid, p);
+      let sync = {};
+      try { sync = await syncUser(uid, { notify: false }); } catch (e) { sync = { syncError: e.message }; }
+      return res.json({ ok: true, canvas: { host: feed.host, name: p.canvas.name }, ...sync });
     }
     await saveProfile(uid, p);
     return res.json({ ok: true, name: p.name, schedule: p.schedule || null });
