@@ -4,6 +4,8 @@
 
 const STORAGE_KEY = 'homework-tracker-v1';
 const ONLINE = location.protocol.startsWith('http');
+const GITHUB = 'https://github.com/Ashvath19/homework-tracker';
+const reportLink = (text) => `<a href="${GITHUB}/issues/new" target="_blank" rel="noopener">${text}</a>`;
 const COLORS = ['#e5484d', '#f76b15', '#e2a336', '#30a46c', '#12a594', '#0090ff', '#8e4ec6', '#d6409f'];
 const TAGS = {
   homework: { label: 'Homework', icon: '📄' },
@@ -564,7 +566,7 @@ function renderLogin() {
       <p class="lede">Your Moodle assignments, sorted by when they're due.</p>
       ${loginTabs()}
       <div class="beta-note">
-        <p><b>Still being tested.</b> It might miss some homework or show the wrong due date, especially for classes with different teachers. Double-check Moodle for anything important, and tell whoever sent you the link if something's off.</p>
+        <p><b>Still being tested.</b> It might miss some homework or show the wrong due date, especially for classes with different teachers. Double-check Moodle for anything important, and ${reportLink('report it on GitHub')} if something's off.</p>
         <p><b>Your Moodle key is like a password.</b> This site stores it to read your Moodle account as you. It's run by a student, not VCS, so only use it if you trust whoever runs it. You can cut off access anytime by resetting your key on Moodle.</p>
       </div>
       ${loginMode === 'code' ? codeForm : keyForm}
@@ -587,7 +589,7 @@ function renderOwnLogin() {
       <p class="lede">Keep track of your homework, sorted by when it's due.</p>
       ${loginTabs()}
       <div class="beta-note">
-        <p><b>Still being tested.</b> Something might not work quite right. Tell whoever sent you the link if something's off.</p>
+        <p><b>Still being tested.</b> Something might not work quite right. ${reportLink('Report it on GitHub')} if something's off.</p>
         <p><b>No password.</b> You log in with a passkey: your device's Face ID, fingerprint or PIN. The site never sees your face or fingerprint, and there's no password to leak.</p>
       </div>
       ${ok ? `
@@ -934,6 +936,13 @@ function renderSettings() {
       <p>Send a friend the link. VCS students log in with their Moodle key, and anyone else can log their own homework. Everyone only sees their own list.</p>
       <div class="row"><button class="btn" data-action="share">Share the link</button></div>
     </section>` : ''}
+    <section class="card"><h3>About</h3>
+      <p>Made by a student. The code is open on GitHub, and you can report a problem or ask for a feature there.</p>
+      <div class="row">
+        <a class="btn" href="${GITHUB}/issues/new" target="_blank" rel="noopener">Report a problem</a>
+        <a class="btn" href="${GITHUB}" target="_blank" rel="noopener">See the code</a>
+      </div>
+    </section>
     ${ONLINE && me ? `<section class="card"><h3>Account</h3>
       <p>Logged in as <b>${esc(me.name)}</b>.</p>
       <div class="row"><button class="primary" data-action="link-device">Log in on another device</button></div>
