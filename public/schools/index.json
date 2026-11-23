@@ -8,6 +8,12 @@
    "needs": "pattern"
   },
   {
+   "id": "sobrato",
+   "name": "Ann Sobrato High School",
+   "place": "Morgan Hill",
+   "needs": "pattern"
+  },
+  {
    "id": "mitty",
    "name": "Archbishop Mitty High School",
    "place": "San Jose",
@@ -20,10 +26,28 @@
    "needs": null
   },
   {
+   "id": "branham",
+   "name": "Branham High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "christopher",
+   "name": "Christopher High School",
+   "place": "Gilroy",
+   "needs": null
+  },
+  {
    "id": "cupertino",
    "name": "Cupertino High School",
    "place": "Cupertino",
    "needs": null
+  },
+  {
+   "id": "del-mar",
+   "name": "Del Mar High School",
+   "place": "San Jose",
+   "needs": "pattern"
   },
   {
    "id": "evergreen-valley",
@@ -35,6 +59,12 @@
    "id": "fremont",
    "name": "Fremont High School",
    "place": "Sunnyvale",
+   "needs": null
+  },
+  {
+   "id": "gilroy",
+   "name": "Gilroy High School",
+   "place": "Gilroy",
    "needs": null
   },
   {
@@ -68,6 +98,12 @@
    "needs": "pattern"
   },
   {
+   "id": "leigh",
+   "name": "Leigh High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
    "id": "leland",
    "name": "Leland High School",
    "place": "San Jose",
@@ -78,6 +114,18 @@
    "name": "Lincoln High School",
    "place": "San Jose",
    "needs": "pattern"
+  },
+  {
+   "id": "live-oak",
+   "name": "Live Oak High School",
+   "place": "Morgan Hill",
+   "needs": null
+  },
+  {
+   "id": "los-altos",
+   "name": "Los Altos High School",
+   "place": "Los Altos",
+   "needs": null
   },
   {
    "id": "los-gatos",
@@ -92,6 +140,12 @@
    "needs": null
   },
   {
+   "id": "milpitas",
+   "name": "Milpitas High School",
+   "place": "Milpitas",
+   "needs": null
+  },
+  {
    "id": "monta-vista",
    "name": "Monta Vista High School",
    "place": "Cupertino",
@@ -101,6 +155,12 @@
    "id": "mount-pleasant",
    "name": "Mount Pleasant High School",
    "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "mountain-view",
+   "name": "Mountain View High School",
+   "place": "Mountain View",
    "needs": "pattern"
   },
   {
@@ -122,8 +182,20 @@
    "needs": "pattern"
   },
   {
+   "id": "pinewood",
+   "name": "Pinewood School (Upper Campus)",
+   "place": "Los Altos Hills",
+   "needs": "pattern"
+  },
+  {
    "id": "pioneer",
    "name": "Pioneer High School",
+   "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "prospect",
+   "name": "Prospect High School",
    "place": "San Jose",
    "needs": "pattern"
   },
@@ -158,6 +230,12 @@
    "needs": "pattern"
   },
   {
+   "id": "kings-academy",
+   "name": "The King's Academy",
+   "place": "Sunnyvale",
+   "needs": "pattern"
+  },
+  {
    "id": "vchs",
    "name": "Valley Christian High School",
    "place": "San Jose",
@@ -173,6 +251,12 @@
    "id": "overfelt",
    "name": "W.C. Overfelt High School",
    "place": "San Jose",
+   "needs": "pattern"
+  },
+  {
+   "id": "westmont",
+   "name": "Westmont High School",
+   "place": "Campbell",
    "needs": "pattern"
   },
   {

@@ -38,6 +38,18 @@ const SOURCES = [
   { id: 'bcp-dates', schools: 'Bellarmine', kind: 'link', page: 'https://www.bcp.org/important-student-dates', match: /ImportantStudentDates/ },
   { id: 'bcp-schedule', schools: 'Bellarmine', kind: 'section', page: 'https://bcp.org/academics/daily-class-schedule', from: 'Monday', to: null },
   { id: 'mitty-dates', schools: 'Archbishop Mitty', kind: 'section', page: 'https://www.mitty.com/about-amhs/amhs-holidays-and-important-dates', from: '2026-27', to: null },
+  { id: 'cuhsd-calendar', schools: 'Branham, Del Mar, Leigh, Prospect, Westmont', kind: 'link', page: 'https://www.cuhsd.org/apps/pages/district_calendar', match: /138c3697-ce2d-4da2-a926-643b8b55fc2d/ },
+  // Google Drive pages change their code on every load, so for Drive files only the link itself is watched.
+  { id: 'musd-calendar', schools: 'Milpitas', kind: 'link', follow: false, page: 'https://www.musd.org/31605_2', match: /1rOmjVnN5Y3U6wDczPb6XqykTjoFmi1Kz/ },
+  { id: 'mhs-bell', schools: 'Milpitas', kind: 'link', follow: false, page: 'https://mhs.musd.org', match: /1-QExrtCyYRmYnDJGrgIUjktevLvgcMft/ },
+  { id: 'mvla-calendar', schools: 'Los Altos, Mountain View', kind: 'link', page: 'https://www.mvla.net/', match: /2026-27_school_calendar\.pdf/ },
+  { id: 'lahs-bell', schools: 'Los Altos', kind: 'link', page: 'https://lahs.mvla.net/bell-schedule', match: /lahs-bell-schedules/ },
+  { id: 'mhusd-calendar', schools: 'Live Oak, Sobrato', kind: 'link', page: 'https://www.mhusd.org/about/calendar', match: /x0xpyvin31wxpecbz55u/ },
+  { id: 'lohs-schedule', schools: 'Live Oak', kind: 'link', page: 'https://liveoak.mhusd.org/about/bell-schedule', match: /rnscrkhm7uqzt1hpuegw/ },
+  { id: 'sobrato-bell', schools: 'Sobrato', kind: 'link', page: 'https://sobrato.mhusd.org/about/bell-schedules', match: /cvcqkhc1z26elcjciqs1/ },
+  { id: 'gusd-calendar', schools: 'Gilroy, Christopher', kind: 'section', page: 'https://www.gilroyunified.org/families/instructional-calendar', from: 'First day of school', to: null },
+  { id: 'pinewood-calendar', schools: 'Pinewood', kind: 'link', page: 'https://www.pinewood.edu/calendar', match: /26-27_General_Calendar/ },
+  { id: 'tka-calendar', schools: "The King's Academy", kind: 'link', page: 'https://www.tka.org/quick-links/school-calendar', match: /e4e2903e-e446-4258-b102-f074a5643711/ },
 ];
 
 const sha = (b) => crypto.createHash('sha256').update(b).digest('hex').slice(0, 16);
@@ -70,6 +82,7 @@ async function fingerprint(src) {
   const hit = links.find((m) => src.match.test(m[0]));
   if (!hit) return { gone: true }; // the page loaded but the document isn't linked anymore: usually a new version
   const href = new URL(hit[1].replace(/&amp;/g, '&'), src.page).href;
+  if (src.follow === false) return { hash: sha(href), url: href };
   const file = await get(href);
   const buf = Buffer.from(await file.arrayBuffer());
   return { hash: sha(buf), url: file.url, bytes: buf.length };

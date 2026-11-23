@@ -124,6 +124,63 @@ for id, name in [('evergreen-valley', 'Evergreen Valley High School'), ('silver-
                  ('overfelt', 'W.C. Overfelt High School')]:
     school(id, name, 'San Jose', ESUHSD, None, [])
 
+# ---- Campbell Union (district calendar; each school's weekly pattern is set by the student) ----
+# Schools differ (Branham A/B with 7th every day, Del Mar odd/even with a Wednesday C day, Leigh/Prospect blocks),
+# and their 2026-27 A/B weekday maps are only in PDFs/Drive files, so students set the week themselves.
+CUHSD = dict(first='2026-08-11', last='2027-06-03', src='https://www.cuhsd.org/apps/pages/district_calendar',
+  off=days('2026-09-07', '2026-10-09', '2026-10-12', '2026-11-11', ('2026-11-23', '2026-11-27'), *WINTER, '2027-01-18',
+           '2027-01-27', ('2027-02-15', '2027-02-19'), '2027-03-08', ('2027-04-12', '2027-04-16'), '2027-05-31'))
+for id, name in [('branham', 'Branham High School'), ('del-mar', 'Del Mar High School'), ('leigh', 'Leigh High School'),
+                 ('prospect', 'Prospect High School'), ('westmont', 'Westmont High School')]:
+    school(id, name, 'San Jose' if id != 'westmont' else 'Campbell', CUHSD, None, [],
+      special={d: FIN() for d in ['2026-12-16', '2026-12-17', '2026-12-18']})
+
+# ---- Milpitas: every period meets every day ----
+MUSD = dict(first='2026-08-13', last='2027-06-08', src='https://www.musd.org/31605_2',
+  off=days('2026-09-07', '2026-10-12', '2026-11-02', '2026-11-11', ('2026-11-23', '2026-11-27'), *WINTER, '2027-01-04',
+           '2027-01-15', '2027-01-18', ('2027-02-15', '2027-02-19'), '2027-03-29', ('2027-04-12', '2027-04-16'), '2027-05-31'))
+school('milpitas', 'Milpitas High School', 'Milpitas', MUSD, {'type': 'weekday', 'days': {str(d): '' for d in range(1, 6)}},
+  ['https://mhs.musd.org/59709_2'], classDays=[], special={d: FIN() for d in ['2026-12-16', '2026-12-17', '2026-12-18']})
+
+# ---- Mountain View-Los Altos ----
+# "PL/TW" days on the district calendar are student days (the month day counts include them).
+MVLA = dict(first='2026-08-10', last='2027-06-04', src='https://www.mvla.net/',
+  off=days('2026-09-07', '2026-10-08', '2026-10-09', '2026-11-11', ('2026-11-23', '2026-11-27'), *WINTER, '2027-01-04',
+           '2027-01-18', ('2027-02-15', '2027-02-19'), '2027-03-19', ('2027-04-05', '2027-04-09'), '2027-05-31'))
+school('los-altos', 'Los Altos High School', 'Los Altos', MVLA,
+  {'type': 'weekday', 'days': {'1': 'All', '2': 'Odd', '3': 'Even', '4': 'Odd', '5': 'Even'}}, ['https://lahs.mvla.net/bell-schedule'],
+  labelNames={'All': 'All periods (schedule A)', 'Odd': 'Odd periods (schedule B)', 'Even': 'Even periods (schedule C)'}, classDays=['Odd', 'Even'],
+  special={'2026-12-14': {'label': 'Even', 'note': 'Finals week: even periods'}, **{d: FIN() for d in ['2026-12-16', '2026-12-17', '2026-12-18']}})
+school('mountain-view', 'Mountain View High School', 'Mountain View', MVLA, None, [],
+  special={d: FIN() for d in ['2026-12-16', '2026-12-17', '2026-12-18']})
+
+# ---- Morgan Hill (days off from Live Oak's day-by-day 2026-27 schedule, which matches the district's 83 + 97 days) ----
+MHUSD = dict(first='2026-08-13', last='2027-06-04', src='https://www.mhusd.org/about/calendar',
+  off=days('2026-09-07', '2026-10-09', '2026-11-11', ('2026-11-23', '2026-11-27'), '2026-12-18', *WINTER, '2027-01-18',
+           ('2027-02-15', '2027-02-19'), '2027-03-26', ('2027-03-29', '2027-04-02'), '2027-05-31'))
+LOHS_ALL = lambda note='All periods (1-7)': {'label': 'All', 'note': note}
+school('live-oak', 'Live Oak High School', 'Morgan Hill', MHUSD,
+  {'type': 'weekday', 'days': {'1': 'All', '2': 'Odd', '3': 'Even', '4': 'Odd', '5': 'Even'}}, ['https://liveoak.mhusd.org/about/bell-schedule'],
+  labelNames={'All': 'All periods (1-7)', 'Odd': 'Odd periods (1, 3, 5, 7)', 'Even': 'Even periods (2, 4, 6)'}, classDays=['Odd', 'Even'],
+  special={**sp(['2026-08-13', '2026-08-14', '2026-10-08', '2027-03-25'], LOHS_ALL()),
+           '2026-11-09': {'label': 'Odd', 'note': 'Odd periods (1, 3, 5, 7)'}, '2026-11-10': {'label': 'Even', 'note': 'Even periods (2, 4, 6)'},
+           '2026-12-14': FIN('Check-in, period 1 final'), '2026-12-15': FIN('Finals: periods 2, 5'), '2026-12-16': FIN('Finals: periods 3, 6'),
+           '2026-12-17': FIN('Finals: periods 4, 7'),
+           '2027-06-01': FIN('Finals: periods 1, 4'), '2027-06-02': FIN('Finals: periods 2, 5'), '2027-06-03': FIN('Finals: periods 3, 6'),
+           '2027-06-04': FIN('Finals: period 7, activity')})
+# Sobrato: A day 1-2-3-7, B day 4-5-6-7, Wednesday all; which weekdays are A vs B isn't published, so students set it.
+school('sobrato', 'Ann Sobrato High School', 'Morgan Hill', MHUSD, None, ['https://sobrato.mhusd.org/about/bell-schedules'],
+  special={d: FIN() for d in ['2026-12-14', '2026-12-15', '2026-12-16', '2026-12-17']})
+
+# ---- Gilroy: Mon/Fri all periods, Tue-Thu blocks where each class meets twice, so classes meet most days ----
+GUSD = dict(first='2026-08-19', last='2027-06-11', src='https://www.gilroyunified.org/families/instructional-calendar',
+  off=days('2026-09-07', '2026-10-12', '2026-10-16', '2026-11-11', ('2026-11-23', '2026-11-27'), *WINTER, '2027-01-04',
+           '2027-01-18', '2027-01-22', ('2027-02-15', '2027-02-19'), ('2027-03-29', '2027-04-02'), '2027-05-31'))
+for id, name, bell in [('gilroy', 'Gilroy High School', 'https://gilroyhs.gilroyunified.org/our-school/bell-schedules'),
+                       ('christopher', 'Christopher High School', 'https://chs.gilroyunified.org/our-school/bell-schedules')]:
+    school(id, name, 'Gilroy', GUSD, {'type': 'weekday', 'days': {str(d): '' for d in range(1, 6)}}, [bell], classDays=[],
+      special={d: FIN() for d in ['2026-12-16', '2026-12-17', '2026-12-18', '2027-06-09', '2027-06-10', '2027-06-11']})
+
 # ---- Private schools ----
 BCP = dict(first='2026-08-13', last='2027-05-25', src='https://bcp.org/important-student-dates',
   off=days('2026-09-07', '2026-09-14', ('2026-10-15', '2026-10-16'), ('2026-11-23', '2026-11-27'), ('2026-12-21', '2027-01-04'),
@@ -137,6 +194,19 @@ MITTY = dict(first='2026-08-18', last='2027-05-26', src='https://www.mitty.com/a
            ('2026-12-21', '2027-01-05'), '2027-01-18', '2027-02-12', '2027-02-15', '2027-03-05', '2027-03-26',
            ('2027-03-29', '2027-04-02'), '2027-04-21', '2027-04-26'))
 school('mitty', 'Archbishop Mitty High School', 'San Jose', MITTY, None, [])
+
+# Pinewood Upper School (grades 9-12). Winter recess Dec 21-Jan 4 plus a Jan 5 staff day; 9-12 finals end May 26.
+PINEWOOD = dict(first='2026-08-17', last='2027-05-26', src='https://www.pinewood.edu/uploaded/documents/Calendars/26-27_General_Calendar.pdf',
+  off=days('2026-09-07', '2026-09-25', ('2026-10-09', '2026-10-12'), '2026-11-02', ('2026-11-23', '2026-11-27'),
+           ('2026-12-21', '2027-01-05'), '2027-01-18', '2027-01-29', ('2027-02-15', '2027-02-19'), '2027-03-15', ('2027-04-05', '2027-04-09')))
+school('pinewood', 'Pinewood School (Upper Campus)', 'Los Altos Hills', PINEWOOD, None, [],
+  special={**{d: FIN() for d in ['2026-12-15', '2026-12-16', '2026-12-17', '2026-12-18']}, **{d: FIN() for d in ['2027-05-21', '2027-05-24', '2027-05-25', '2027-05-26']}})
+# The King's Academy (grades 6-12). Veterans Day is a class day there.
+TKA = dict(first='2026-08-10', last='2027-05-20', src='https://www.tka.org/quick-links/school-calendar',
+  off=days('2026-09-07', '2026-10-12', ('2026-11-23', '2026-11-27'), ('2026-12-18', '2027-01-01'), '2027-01-04', '2027-01-18',
+           '2027-02-12', '2027-02-15', '2027-03-08', '2027-03-26', ('2027-03-29', '2027-04-02')))
+school('kings-academy', "The King's Academy", 'Sunnyvale', TKA, None, ['https://www.tka.org/quick-links/bell-schedule'],
+  special={**{d: FIN() for d in ['2026-12-15', '2026-12-16', '2026-12-17']}, **{d: FIN() for d in ['2027-05-18', '2027-05-19', '2027-05-20']}})
 
 # ---- Valley Christian (same campus calendar VCS Moodle accounts use: api/_schoolDays.json) ----
 # The A/B days there alternate over school days, skipping days off and C days, so a rotation

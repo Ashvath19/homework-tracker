@@ -113,5 +113,59 @@
  "mitty-dates": {
   "hash": "91241e6b69094133",
   "fails": 0
+ },
+ "cuhsd-calendar": {
+  "hash": "8963d4eb35d63419",
+  "url": "https://4.files.edl.io/4177/08/03/26/201805-138c3697-ce2d-4da2-a926-643b8b55fc2d.pdf",
+  "fails": 0
+ },
+ "musd-calendar": {
+  "hash": "4ef1354850920393",
+  "url": "https://drive.google.com/file/d/1rOmjVnN5Y3U6wDczPb6XqykTjoFmi1Kz/view?usp=sharing",
+  "fails": 0
+ },
+ "mvla-calendar": {
+  "hash": "b6024cfb55de8b23",
+  "url": "https://files.smartsites.parentsquare.com/10942/2026-27_school_calendar.pdf",
+  "fails": 0
+ },
+ "lahs-bell": {
+  "hash": "dbaeb97ab175ca84",
+  "url": "https://files.smartsites.parentsquare.com/10944/sy26_lahs-bell-schedules.pdf",
+  "fails": 0
+ },
+ "mhusd-calendar": {
+  "hash": "22af46b6a624eec6",
+  "url": "https://resources.finalsite.net/images/v1761074580/mhusdorg/x0xpyvin31wxpecbz55u/26-27AcademicCalendarw_boardapprovaldate.pdf",
+  "fails": 0
+ },
+ "lohs-schedule": {
+  "hash": "1849c9188b9a8de5",
+  "url": "https://resources.finalsite.net/images/v1793985631/mhusdorg/rnscrkhm7uqzt1hpuegw/26-27YearScheduleCalendar-Sheet1.pdf",
+  "fails": 0
+ },
+ "sobrato-bell": {
+  "hash": "c00cd680276ed348",
+  "url": "https://resources.finalsite.net/images/v1786043844/mhusdorg/cvcqkhc1z26elcjciqs1/2026-2027SobratoBellSchedule.pdf",
+  "fails": 0
+ },
+ "gusd-calendar": {
+  "hash": "45a7972877993913",
+  "fails": 0
+ },
+ "pinewood-calendar": {
+  "hash": "7472a33502704903",
+  "url": "https://www.pinewood.edu/uploaded/documents/Calendars/26-27_General_Calendar.pdf",
+  "fails": 0
+ },
+ "tka-calendar": {
+  "hash": "64b5010b57bf086e",
+  "url": "https://resources.finalsite.net/images/v1786308812/kings/kings/x7lcbo5ugfndwfvbxjt9/YAAGcalendar2026-2027REVISED08-08-26.pdf",
+  "fails": 0
+ },
+ "mhs-bell": {
+  "hash": "15a16dd752639901",
+  "url": "https://drive.google.com/file/d/1-QExrtCyYRmYnDJGrgIUjktevLvgcMft/view?usp=sharing",
+  "fails": 0
  }
 }
