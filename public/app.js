@@ -1170,6 +1170,28 @@ async function photoToDataUrl(file) {
   } finally { URL.revokeObjectURL(url); }
 }
 
+const sgySteps = (cls = 'hint') => `<ol class="${cls}">
+        <li>Press <b>Copy bookmark code</b>.</li>
+        <li>Bookmark any page (on iPhone or iPad: Share, then Add Bookmark), name it <b>Sync Homework</b>, and save.</li>
+        <li>Edit that bookmark and replace its address with the copied code.</li>
+        <li>Go to your Schoology tab so it's the page in front, then tap the <b>Sync Homework</b> bookmark there. It takes a few seconds and brings you back here.</li>
+      </ol>`;
+
+// First-time Schoology setup, at the top of the dashboard until the first sync (or "later").
+function sgySetupCard() {
+  if (feed?.kind !== 'schoology' || feed.synced || !me || safeGet(`hw-sgy-setup-later:${me.id}`)) return '';
+  return `<section class="sgy-setup" aria-label="Finish setting up Schoology">
+    <h3>One more step: sort your homework into classes</h3>
+    <p>Schoology's calendar doesn't say which class each assignment is for. A bookmark fixes that: tap it while you're on Schoology and your homework gets sorted into your real classes. It never sees your password.</p>
+    ${sgySteps('')}
+    <div class="row">
+      <button class="primary" data-action="sgy-bookmark-copy">Copy bookmark code</button>
+      <button class="link-btn" data-action="sgy-setup-later">I'll do it later</button>
+    </div>
+    <p class="hint">Until then, new homework waits in a “To sort” list where you can pick each class. The steps are also in Settings, under Schoology.</p>
+  </section>`;
+}
+
 // The sync bookmark: public/sgy-sync.js, pointed at this site, as a javascript: address.
 let sgyBookmarkCache = null;
 async function sgyBookmark() {
@@ -1203,12 +1225,7 @@ function feedCard() {
     <p class="hint">${name} doesn't share what you've turned in, so check things off yourself.${feed.kind === 'schoology' ? ' Anything past its due date stays here as overdue until you do, even if Schoology forgets to list it as missing.' : ''}</p>
     ${feed.kind === 'schoology' ? `<h4 class="sub">Sort into classes automatically</h4>
       <p class="hint">${feed.synced ? `Last synced ${ago(feed.synced.at)}: ${feed.synced.classes} classes, ${feed.synced.ids} assignments. Tap the bookmark again whenever new homework lands in “To sort”.` : 'A bookmark you tap while on Schoology. It reads which assignments are in which of your classes and sends just that here, so homework gets sorted with your real class names. It never sees your password.'}</p>
-      <ol class="hint">
-        <li>Press <b>Copy bookmark code</b>.</li>
-        <li>Bookmark any page (on iPhone or iPad: Share, then Add Bookmark), name it <b>Sync Homework</b>, and save.</li>
-        <li>Edit that bookmark and replace its address with the copied code.</li>
-        <li>Go to your Schoology tab so it's the page in front, then tap the <b>Sync Homework</b> bookmark there. It takes a few seconds and brings you back here.</li>
-      </ol>
+      ${sgySteps()}
       <div class="row">
         <button class="btn" data-action="sgy-bookmark-copy">Copy bookmark code</button>
         <a class="btn sgy-bookmark" href="#" data-action="sgy-bookmark-drag" title="On a computer, drag this to your bookmarks bar">Sync Homework</a>
@@ -1229,6 +1246,7 @@ function renderDashboard() {
     main.innerHTML = `
       <div class="page-header"><h2>Dashboard</h2></div>
       <p class="subtitle">Everything you have due, in date order.</p>
+      ${sgySetupCard()}
       <div class="empty">
         <p>${ONLINE && isOwn() && feed ? `Nothing from ${feed.label} yet. Your classes show up here as soon as teachers post assignments, or you can add them yourself.` : ONLINE && isOwn() ? 'Add your classes to get started, or connect Canvas or Schoology in Settings if your school uses one. Then add homework as you get it.' : ONLINE ? 'Nothing from Moodle yet. Your classes show up here as soon as teachers post assignments, or you can add them yourself.' : 'Start by adding your classes.'}</p>
         <div class="row" style="justify-content:center">
@@ -1254,6 +1272,7 @@ function renderDashboard() {
   main.innerHTML = `
     ${hero(allTodo, buckets)}
     ${dayPicker()}
+    ${sgySetupCard()}
     ${quickAddForm(null)}
     ${sortBox()}
     ${filterBar(allTodo)}
@@ -1825,6 +1844,7 @@ document.addEventListener('click', async (e) => {
       refreshPushState();
       break;
     }
+    case 'sgy-setup-later': safeSet(`hw-sgy-setup-later:${me?.id}`, '1'); toast('The steps are in Settings, under Schoology'); render(); break;
     case 'sgy-bookmark-drag': toast('Drag it to your bookmarks bar, or use Copy bookmark code'); break;
     case 'sgy-bookmark-copy':
       try { await navigator.clipboard.writeText(await sgyBookmark()); toast('Copied. Paste it as the bookmark\'s address.'); }

@@ -528,3 +528,7 @@ body.has-bd::after { content: ''; position: fixed; inset: 0; z-index: -1; pointe
 .sort-title small.late { color: var(--red); }
 .sort-box select { width: auto; max-width: 48%; padding: 6px 8px; flex: none; }
 .sort-nudge { margin: 8px 0 0; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--pen) 12%, transparent); color: var(--ink); font-size: 14px; }
+.sgy-setup { margin: 0 0 22px; padding: 16px 18px; border: 1px solid var(--rule); border-left: 3px solid var(--pen); border-radius: 10px; background: var(--sheet); }
+.sgy-setup h3 { margin: 0 0 6px; font-size: 17px; }
+.sgy-setup p { margin: 0 0 10px; }
+.sgy-setup ol { margin: 0 0 12px; padding-left: 20px; line-height: 1.55; }
