@@ -964,7 +964,14 @@ const OLD_PRESETS = { // presets from before you could pick your own colors
 };
 const HEX = /^#[0-9a-f]{6}$/i;
 const MAX_STOPS = 6;
-let backdrop = { mode: 'plain', color: '#8ec5fc', stops: ['#a1c4fd', '#fbc2eb'], dir: '135', fade: 0.72, textLight: '', textDark: '',
+// Backdrops drawn by friends of the site. To add one: put the full image and a ~240px-tall
+// thumbnail in public/backdrops/, then add a line here. main = the color "Match to one color" uses;
+// avg = its average color (for the text readability warning).
+const ART = [
+  { id: 'sky-birds', name: 'Sky and birds', by: 'a friend', file: '/backdrops/sky-birds.jpg', thumb: '/backdrops/sky-birds-thumb.jpg', main: '#9fb4e6', avg: '#e7edfa' },
+];
+const artById = (id) => ART.find((a) => a.id === id) || ART[0];
+let backdrop = { mode: 'plain', color: '#8ec5fc', stops: ['#a1c4fd', '#fbc2eb'], art: 'sky-birds', dir: '135', fade: 0.72, textLight: '', textDark: '',
   tintOn: false, tint: '#7c6cf0', tintStrength: 1, tintFrom: 'backdrop' };
 // Text color is saved separately for light and dark mode, so dark text picked in the day
 // doesn't vanish when your device switches to dark mode at night.
@@ -988,6 +995,7 @@ function backdropCss() {
   const b = backdrop;
   if (b.mode === 'photo') { const photo = safeGet('hw-backdrop-photo'); return photo ? `center / cover no-repeat url("${photo}")` : ''; }
   if (b.mode === 'color') return b.color;
+  if (b.mode === 'art') return `center / cover no-repeat url("${artById(b.art).file}")`;
   if (b.mode === 'gradient') return b.dir === 'radial' ? `radial-gradient(circle at center, ${b.stops.join(', ')})` : `linear-gradient(${Number(b.dir) || 135}deg, ${b.stops.join(', ')})`;
   return '';
 }
@@ -1012,8 +1020,8 @@ function applyBackdrop() {
 }
 function saveBackdrop(changes) {
   backdrop = { ...backdrop, ...changes };
-  const { mode, color, stops, dir, fade, textLight, textDark, tintOn, tint, tintStrength, tintFrom } = backdrop;
-  safeSet('hw-backdrop', JSON.stringify({ mode, color, stops, dir, fade, textLight, textDark, tintOn, tint, tintStrength, tintFrom }));
+  const { mode, color, stops, art, dir, fade, textLight, textDark, tintOn, tint, tintStrength, tintFrom } = backdrop;
+  safeSet('hw-backdrop', JSON.stringify({ mode, color, stops, art, dir, fade, textLight, textDark, tintOn, tint, tintStrength, tintFrom }));
   applyBackdrop();
 }
 applyBackdrop();
@@ -1029,7 +1037,7 @@ function contrast() {
   const paperHex = getComputedStyle(document.documentElement).getPropertyValue('--paper').trim();
   const paper = HEX.test(paperHex) ? rgb(paperHex) : [246, 247, 249];
   const b = backdrop;
-  const under = b.mode === 'color' ? rgb(b.color) : b.mode === 'gradient' ? [0, 1, 2].map((i) => b.stops.reduce((sum, c) => sum + rgb(c)[i], 0) / b.stops.length) : paper;
+  const under = b.mode === 'color' ? rgb(b.color) : b.mode === 'art' ? rgb(artById(b.art).avg) : b.mode === 'gradient' ? [0, 1, 2].map((i) => b.stops.reduce((sum, c) => sum + rgb(c)[i], 0) / b.stops.length) : paper;
   const f = b.mode === 'plain' ? 1 : +b.fade || 0.72;
   const panel = paper.map((v, i) => v * f + under[i] * (1 - f));
   const [x, y] = [lum(rgb(textNow())), lum(panel)].sort((m, n) => n - m);
@@ -1058,7 +1066,7 @@ function hslToRgb([h, sat, l]) {
 const grayOf = (hex) => { const [r, g, b] = rgb(hex); return 0.299 * r + 0.587 * g + 0.114 * b; };
 let tintCache = null;
 // The color class shades are made from: your backdrop's main color, or one you pick.
-const backdropMain = () => backdrop.mode === 'color' ? backdrop.color : backdrop.mode === 'gradient' ? backdrop.stops[0] : null;
+const backdropMain = () => backdrop.mode === 'color' ? backdrop.color : backdrop.mode === 'gradient' ? backdrop.stops[0] : backdrop.mode === 'art' ? artById(backdrop.art).main : null;
 const tintBase = () => (backdrop.tintFrom === 'backdrop' && backdropMain()) || backdrop.tint;
 function classColor(c) {
   const orig = HEX.test(c?.color || '') ? c.color : COLORS[0];
@@ -1101,7 +1109,7 @@ function backdropCard() {
   const photo = safeGet('hw-backdrop-photo');
   const text = textNow();
   const inkNow = text || getComputedStyle(document.documentElement).getPropertyValue('--ink').trim();
-  const modes = { plain: 'Plain', color: 'Color', gradient: 'Gradient', photo: 'Photo' };
+  const modes = { plain: 'Plain', color: 'Color', gradient: 'Gradient', art: 'Art', photo: 'Photo' };
   const pick = (id, label, value) => `<label class="color-pick"><input type="color" id="${id}" value="${esc(value)}"><span>${label}</span></label>`;
   return `
     <h4 class="sub">Backdrop</h4>
@@ -1120,6 +1128,8 @@ function backdropCard() {
       <label class="color-pick">Direction <select id="bd-dir" class="field">${Object.entries(GRAD_DIRS).map(([v, n]) => `<option value="${v}" ${String(b.dir) === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
       <button class="link-btn" data-action="bd-swap">Reverse order</button>
     </div>` : ''}
+    ${b.mode === 'art' ? `<div class="art-grid">${ART.map((a) => `<button class="art-tile ${b.art === a.id ? 'on' : ''}" data-action="bd-art" data-art="${a.id}" aria-pressed="${b.art === a.id}">
+        <img src="${a.thumb}" alt="" loading="lazy"><span>${esc(a.name)}<small>by ${esc(a.by)}</small></span></button>`).join('')}</div>` : ''}
     ${b.mode === 'photo' ? `<div class="row">
       <button class="btn" data-action="bd-upload">${photo ? 'Use a different photo' : 'Choose a photo'}</button>
       ${photo ? `<button class="link-btn" data-action="bd-photo-off">Remove photo</button>` : ''}
@@ -1857,9 +1867,10 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'bd-mode':
-      saveBackdrop({ mode: el.dataset.mode });
+      saveBackdrop({ mode: el.dataset.mode, ...(el.dataset.mode === 'art' && backdrop.mode !== 'art' && backdrop.fade >= 0.72 ? { fade: 0.55 } : {}) });
       if (el.dataset.mode === 'photo' && !safeGet('hw-backdrop-photo')) $('#bd-file')?.click();
       render(); break;
+    case 'bd-art': saveBackdrop({ mode: 'art', art: el.dataset.art }); render(); break;
     case 'bd-swap': saveBackdrop({ stops: [...backdrop.stops].reverse() }); render(); break;
     case 'bd-stop-add': { // new color: a blend of the last two, so the gradient stays smooth until you change it
       const [a, z] = backdrop.stops.slice(-2).map(rgb);
