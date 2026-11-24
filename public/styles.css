@@ -564,3 +564,6 @@ body.force-light.bd-image { --ink-2: #434b5c; --ink-3: #5f6779; }
 .pe-frame:active { cursor: grabbing; }
 .pe-zoom { width: 100%; accent-color: var(--pen); }
 .pe-presets { margin: 12px 0 4px; }
+/* Drawing on a wide screen: blurred copy fills the screen, the whole sharp drawing sits in front */
+body.has-bd.bd-split::before { filter: blur(26px) saturate(1.05); transform: scale(1.12); }
+body.has-bd.bd-image.bd-split::after { display: block; background: var(--bd-top); -webkit-backdrop-filter: none; backdrop-filter: none; -webkit-mask-image: var(--bd-mask); mask-image: var(--bd-mask); }

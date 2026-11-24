@@ -968,7 +968,7 @@ const MAX_STOPS = 6;
 // thumbnail in public/backdrops/, then add a line here. main = the color "Match to one color" uses;
 // avg = its average color (for the text readability warning).
 const ART = [
-  { id: 'sky-birds', name: 'Sky and birds', by: 'Kelly Zhang', file: '/backdrops/sky-birds.jpg', thumb: '/backdrops/sky-birds-thumb.jpg', main: '#9fb4e6', avg: '#e7edfa', tone: 'light' },
+  { id: 'sky-birds', name: 'Sky and birds', by: 'Kelly Zhang', file: '/backdrops/sky-birds.jpg', thumb: '/backdrops/sky-birds-thumb.jpg', main: '#9fb4e6', avg: '#e7edfa', tone: 'light', w: 512, h: 1024 },
 ];
 const artById = (id) => ART.find((a) => a.id === id) || ART[0];
 // A light drawing always uses the site's light look (light boxes, dark text), even in dark mode.
@@ -1002,14 +1002,16 @@ function photoCss(photo, f, W, H) {
   return `${HEX.test(f.avg || '') ? f.avg : '#000'} url("${photo}") ${f.x ?? 50}% ${f.y ?? 50}% / ${Math.round(f.w * k)}px ${Math.round(f.h * k)}px no-repeat`;
 }
 window.addEventListener('resize', () => { if (backdrop.mode === 'photo' || backdrop.mode === 'art') applyBackdrop(); });
+const artSplit = () => backdrop.mode === 'art' && window.innerWidth >= window.innerHeight;
 const isImageBackdrop = () => backdrop.mode === 'art' || backdrop.mode === 'photo';
 function backdropCss() {
   const b = backdrop;
   if (b.mode === 'photo') { const photo = safeGet('hw-backdrop-photo'); return photo ? photoCss(photo, b.photoFit, window.innerWidth, window.innerHeight) : ''; }
   if (b.mode === 'color') return b.color;
   // Tall screens (phones) show the whole drawing; wide screens are filled (the artist is credited in Settings).
-  // (on wide screens a little less than full width, so it isn't blown up as much; the sides get its sky color)
-  if (b.mode === 'art') { const a = artById(b.art); return `${a.avg} url("${a.file}") center / ${window.innerWidth < window.innerHeight ? 'contain' : '78% auto'} no-repeat`; }
+  // Phones (tall screens): the whole drawing. Wide screens: the whole drawing in front (see artSplit),
+  // with this same drawing behind it, filling the screen and blurred, so the edges are covered.
+  if (b.mode === 'art') { const a = artById(b.art); return `${a.avg} url("${a.file}") center / ${artSplit() ? 'cover' : 'contain'} no-repeat`; }
   if (b.mode === 'gradient') return b.dir === 'radial' ? `radial-gradient(circle at center, ${b.stops.join(', ')})` : `linear-gradient(${Number(b.dir) || 135}deg, ${b.stops.join(', ')})`;
   return '';
 }
@@ -1020,6 +1022,15 @@ function applyBackdrop() {
   // Drawings and photos show as they are: no tint or blur over them.
   document.body.classList.toggle('bd-image', !!css && isImageBackdrop());
   document.body.classList.toggle('force-light', forcedLight());
+  // wide screens with a drawing: the sharp, whole drawing as a second layer in front of the blurred fill
+  document.body.classList.toggle('bd-split', !!css && artSplit());
+  if (artSplit()) {
+    const a = artById(backdrop.art), W = window.innerWidth, H = window.innerHeight;
+    document.body.style.setProperty('--bd-top', `url("${a.file}") center / contain no-repeat`);
+    // fade the drawing's left and right edges into the blur, so there's no visible line
+    const cw = Math.min(W, H * ((a.w || 1) / (a.h || 2))), l = (W - cw) / 2, fadeW = Math.min(90, cw * 0.18);
+    document.body.style.setProperty('--bd-mask', `linear-gradient(to right, transparent ${l}px, #000 ${l + fadeW}px, #000 ${l + cw - fadeW}px, transparent ${l + cw}px)`);
+  } else { document.body.style.removeProperty('--bd-top'); document.body.style.removeProperty('--bd-mask'); }
   st.setProperty('--bd', css || 'none');
   st.setProperty('--bd-fade', `${Math.round(Math.min(0.95, Math.max(0.4, +backdrop.fade || 0.72)) * 100)}%`);
   // Your text color, with lighter shades of it for hints and labels
