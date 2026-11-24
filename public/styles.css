@@ -539,3 +539,20 @@ body.has-bd::after { content: ''; position: fixed; inset: 0; z-index: -1; pointe
 .art-tile.on { color: var(--ink); font-weight: 600; }
 .art-tile.on img { box-shadow: 0 0 0 2px var(--sheet), 0 0 0 4px var(--ink); }
 body.has-bd.bd-image::after { display: none; }
+
+/* A light drawing as the backdrop: always the light look, even in dark mode */
+body.force-light {
+  --paper: #f6f7f9;
+  --sheet: #ffffff;
+  --ink: #172033;
+  --ink-2: #5b6478;
+  --ink-3: #8b93a5;
+  --rule: #e3e6ec;
+  --pen: #2747d0;
+  --pen-ink: #ffffff;
+  --red: #c8372d;
+  --amber: #a85f00;
+  --hl-soft: rgba(255, 224, 102, .6);
+  --hover: rgba(23, 32, 51, .04);
+  color-scheme: light;
+}

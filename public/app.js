@@ -968,15 +968,18 @@ const MAX_STOPS = 6;
 // thumbnail in public/backdrops/, then add a line here. main = the color "Match to one color" uses;
 // avg = its average color (for the text readability warning).
 const ART = [
-  { id: 'sky-birds', name: 'Sky and birds', by: 'a friend', file: '/backdrops/sky-birds.jpg', thumb: '/backdrops/sky-birds-thumb.jpg', main: '#9fb4e6', avg: '#e7edfa' },
+  { id: 'sky-birds', name: 'Sky and birds', by: 'a friend', file: '/backdrops/sky-birds.jpg', thumb: '/backdrops/sky-birds-thumb.jpg', main: '#9fb4e6', avg: '#e7edfa', tone: 'light' },
 ];
 const artById = (id) => ART.find((a) => a.id === id) || ART[0];
+// A light drawing always uses the site's light look (light boxes, dark text), even in dark mode.
+const forcedLight = () => backdrop.mode === 'art' && artById(backdrop.art).tone === 'light';
+const isDark = () => !!window.matchMedia?.('(prefers-color-scheme: dark)').matches && !forcedLight();
 let backdrop = { mode: 'plain', color: '#8ec5fc', stops: ['#a1c4fd', '#fbc2eb'], art: 'sky-birds', dir: '135', fade: 0.72, textLight: '', textDark: '',
   tintOn: false, tint: '#7c6cf0', tintStrength: 1, tintFrom: 'backdrop' };
 // Text color is saved separately for light and dark mode, so dark text picked in the day
 // doesn't vanish when your device switches to dark mode at night.
 const darkMq = window.matchMedia?.('(prefers-color-scheme: dark)');
-const textKey = () => (darkMq?.matches ? 'textDark' : 'textLight');
+const textKey = () => (isDark() ? 'textDark' : 'textLight');
 const textNow = () => backdrop[textKey()] || '';
 try {
   const saved = JSON.parse(safeGet('hw-backdrop') || '{}');
@@ -1006,6 +1009,7 @@ function applyBackdrop() {
   document.body.classList.toggle('has-bd', !!css);
   // Drawings and photos show as they are: no tint or blur over them.
   document.body.classList.toggle('bd-image', !!css && isImageBackdrop());
+  document.body.classList.toggle('force-light', forcedLight());
   st.setProperty('--bd', css || 'none');
   st.setProperty('--bd-fade', `${Math.round(Math.min(0.95, Math.max(0.4, +backdrop.fade || 0.72)) * 100)}%`);
   // Your text color, with lighter shades of it for hints and labels
@@ -1037,7 +1041,7 @@ document.addEventListener('visibilitychange', themeCheck); // backup, in case th
 const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
 const lum = (c) => { const [r, g, b] = c.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
 function contrast() {
-  const paperHex = getComputedStyle(document.documentElement).getPropertyValue('--paper').trim();
+  const paperHex = getComputedStyle(document.body).getPropertyValue('--paper').trim();
   const paper = HEX.test(paperHex) ? rgb(paperHex) : [246, 247, 249];
   const b = backdrop;
   const under = b.mode === 'color' ? rgb(b.color) : b.mode === 'art' ? rgb(artById(b.art).avg) : b.mode === 'gradient' ? [0, 1, 2].map((i) => b.stops.reduce((sum, c) => sum + rgb(c)[i], 0) / b.stops.length) : paper;
@@ -1075,7 +1079,7 @@ function classColor(c) {
   const orig = HEX.test(c?.color || '') ? c.color : COLORS[0];
   if (!backdrop.tintOn) return orig;
   const base = tintBase();
-  const dark = !!darkMq?.matches;
+  const dark = isDark();
   const key = `${base}|${backdrop.tintStrength}|${dark}|${state.classes.map((x) => `${x.id}${x.color}${x.deleted ? 'x' : ''}`).join()}`;
   if (tintCache?.key !== key) {
     // Your first class (top of the sidebar) gets the main color itself; each next class a darker
@@ -1111,7 +1115,7 @@ function backdropCard() {
   const b = backdrop;
   const photo = safeGet('hw-backdrop-photo');
   const text = textNow();
-  const inkNow = text || getComputedStyle(document.documentElement).getPropertyValue('--ink').trim();
+  const inkNow = text || getComputedStyle(document.body).getPropertyValue('--ink').trim();
   const modes = { plain: 'Plain', color: 'Color', gradient: 'Gradient', art: 'Art', photo: 'Photo' };
   const pick = (id, label, value) => `<label class="color-pick"><input type="color" id="${id}" value="${esc(value)}"><span>${label}</span></label>`;
   return `
@@ -1164,7 +1168,7 @@ function backdropCard() {
       ${pick('text-color', text ? 'Your color' : 'Default', inkNow)}
       ${text ? `<button class="link-btn" data-action="text-reset">Back to default</button>` : ''}
     </div>
-    <p class="hint">For ${darkMq?.matches ? 'dark' : 'light'} mode. ${darkMq?.matches ? 'Light' : 'Dark'} mode keeps its own text color.</p>
+    <p class="hint">${forcedLight() && darkMq?.matches ? 'This drawing always uses the light look, so this is your light mode text color.' : `For ${isDark() ? 'dark' : 'light'} mode. ${isDark() ? 'Light' : 'Dark'} mode keeps its own text color.`}</p>
     <p class="bad" id="text-warn" ${!text || contrast() >= 3 ? 'hidden' : ''}>This text color is hard to read on your backdrop. Try a darker or lighter one.</p>
     <p class="hint">Saved on this device only.</p>`;
 }
