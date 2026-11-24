@@ -991,6 +991,7 @@ try {
   backdrop = { ...backdrop, ...saved };
 } catch {}
 
+const isImageBackdrop = () => backdrop.mode === 'art' || backdrop.mode === 'photo';
 function backdropCss() {
   const b = backdrop;
   if (b.mode === 'photo') { const photo = safeGet('hw-backdrop-photo'); return photo ? `center / cover no-repeat url("${photo}")` : ''; }
@@ -1003,6 +1004,8 @@ function applyBackdrop() {
   const css = backdropCss();
   const st = document.body.style;
   document.body.classList.toggle('has-bd', !!css);
+  // Drawings and photos show as they are: no tint or blur over them.
+  document.body.classList.toggle('bd-image', !!css && isImageBackdrop());
   st.setProperty('--bd', css || 'none');
   st.setProperty('--bd-fade', `${Math.round(Math.min(0.95, Math.max(0.4, +backdrop.fade || 0.72)) * 100)}%`);
   // Your text color, with lighter shades of it for hints and labels
@@ -1038,7 +1041,7 @@ function contrast() {
   const paper = HEX.test(paperHex) ? rgb(paperHex) : [246, 247, 249];
   const b = backdrop;
   const under = b.mode === 'color' ? rgb(b.color) : b.mode === 'art' ? rgb(artById(b.art).avg) : b.mode === 'gradient' ? [0, 1, 2].map((i) => b.stops.reduce((sum, c) => sum + rgb(c)[i], 0) / b.stops.length) : paper;
-  const f = b.mode === 'plain' ? 1 : +b.fade || 0.72;
+  const f = b.mode === 'plain' ? 1 : isImageBackdrop() ? 0 : +b.fade || 0.72;
   const panel = paper.map((v, i) => v * f + under[i] * (1 - f));
   const [x, y] = [lum(rgb(textNow())), lum(panel)].sort((m, n) => n - m);
   return (x + 0.05) / (y + 0.05);
@@ -1135,7 +1138,7 @@ function backdropCard() {
       ${photo ? `<button class="link-btn" data-action="bd-photo-off">Remove photo</button>` : ''}
     </div>` : ''}
     <input type="file" id="bd-file" accept="image/*" hidden>
-    ${b.mode !== 'plain' ? `<label class="bd-fade">How much shows through
+    ${b.mode === 'color' || b.mode === 'gradient' ? `<label class="bd-fade">How much shows through
       <input type="range" id="bd-fade" min="40" max="95" step="1" value="${Math.round(135 - b.fade * 100)}">
     </label>` : ''}
 
@@ -1867,7 +1870,7 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'bd-mode':
-      saveBackdrop({ mode: el.dataset.mode, ...(el.dataset.mode === 'art' && backdrop.mode !== 'art' && backdrop.fade >= 0.72 ? { fade: 0.55 } : {}) });
+      saveBackdrop({ mode: el.dataset.mode });
       if (el.dataset.mode === 'photo' && !safeGet('hw-backdrop-photo')) $('#bd-file')?.click();
       render(); break;
     case 'bd-art': saveBackdrop({ mode: 'art', art: el.dataset.art }); render(); break;

@@ -538,3 +538,4 @@ body.has-bd::after { content: ''; position: fixed; inset: 0; z-index: -1; pointe
 .art-tile small { display: block; color: var(--ink-3); font-size: 12px; }
 .art-tile.on { color: var(--ink); font-weight: 600; }
 .art-tile.on img { box-shadow: 0 0 0 2px var(--sheet), 0 0 0 4px var(--ink); }
+body.has-bd.bd-image::after { display: none; }
