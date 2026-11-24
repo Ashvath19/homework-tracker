@@ -556,3 +556,5 @@ body.force-light {
   --hover: rgba(23, 32, 51, .04);
   color-scheme: light;
 }
+/* On a picture, gray text needs more contrast than on plain white */
+body.force-light.bd-image { --ink-2: #434b5c; --ink-3: #5f6779; }
