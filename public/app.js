@@ -999,7 +999,8 @@ function backdropCss() {
   const b = backdrop;
   if (b.mode === 'photo') { const photo = safeGet('hw-backdrop-photo'); return photo ? `center / cover no-repeat url("${photo}")` : ''; }
   if (b.mode === 'color') return b.color;
-  if (b.mode === 'art') return `center / cover no-repeat url("${artById(b.art).file}")`;
+  // The whole drawing, never cropped (artists sign their work), on its own sky color.
+  if (b.mode === 'art') { const a = artById(b.art); return `${a.avg} url("${a.file}") center / contain no-repeat`; }
   if (b.mode === 'gradient') return b.dir === 'radial' ? `radial-gradient(circle at center, ${b.stops.join(', ')})` : `linear-gradient(${Number(b.dir) || 135}deg, ${b.stops.join(', ')})`;
   return '';
 }
@@ -1136,7 +1137,7 @@ function backdropCard() {
       <button class="link-btn" data-action="bd-swap">Reverse order</button>
     </div>` : ''}
     ${b.mode === 'art' ? `<div class="art-grid">${ART.map((a) => `<button class="art-tile ${b.art === a.id ? 'on' : ''}" data-action="bd-art" data-art="${a.id}" aria-pressed="${b.art === a.id}">
-        <img src="${a.thumb}" alt="" loading="lazy"><span>${esc(a.name)}<small>by ${esc(a.by)}</small></span></button>`).join('')}</div>` : ''}
+        <img src="${a.thumb}" alt="" loading="lazy" style="background:${a.avg}"><span>${esc(a.name)}<small>by ${esc(a.by)}</small></span></button>`).join('')}</div>` : ''}
     ${b.mode === 'photo' ? `<div class="row">
       <button class="btn" data-action="bd-upload">${photo ? 'Use a different photo' : 'Choose a photo'}</button>
       ${photo ? `<button class="link-btn" data-action="bd-photo-off">Remove photo</button>` : ''}

@@ -534,7 +534,7 @@ body.has-bd::after { content: ''; position: fixed; inset: 0; z-index: -1; pointe
 .sgy-setup ol { margin: 0 0 12px; padding-left: 20px; line-height: 1.55; }
 .art-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; margin: 0 0 12px; }
 .art-tile { display: flex; flex-direction: column; gap: 6px; padding: 0; border: none; background: none; cursor: pointer; color: var(--ink-2); font: inherit; font-size: 13px; text-align: left; }
-.art-tile img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--rule); background: var(--paper); }
+.art-tile img { width: 100%; aspect-ratio: 3 / 4; object-fit: contain; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--rule); background: var(--paper); }
 .art-tile small { display: block; color: var(--ink-3); font-size: 12px; }
 .art-tile.on { color: var(--ink); font-weight: 600; }
 .art-tile.on img { box-shadow: 0 0 0 2px var(--sheet), 0 0 0 4px var(--ink); }
