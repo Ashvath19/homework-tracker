@@ -1008,7 +1008,8 @@ function backdropCss() {
   if (b.mode === 'photo') { const photo = safeGet('hw-backdrop-photo'); return photo ? photoCss(photo, b.photoFit, window.innerWidth, window.innerHeight) : ''; }
   if (b.mode === 'color') return b.color;
   // Tall screens (phones) show the whole drawing; wide screens are filled (the artist is credited in Settings).
-  if (b.mode === 'art') { const a = artById(b.art); return `${a.avg} url("${a.file}") center / ${window.innerWidth < window.innerHeight ? 'contain' : 'cover'} no-repeat`; }
+  // (on wide screens a little less than full width, so it isn't blown up as much; the sides get its sky color)
+  if (b.mode === 'art') { const a = artById(b.art); return `${a.avg} url("${a.file}") center / ${window.innerWidth < window.innerHeight ? 'contain' : '78% auto'} no-repeat`; }
   if (b.mode === 'gradient') return b.dir === 'radial' ? `radial-gradient(circle at center, ${b.stops.join(', ')})` : `linear-gradient(${Number(b.dir) || 135}deg, ${b.stops.join(', ')})`;
   return '';
 }
