@@ -994,10 +994,18 @@ try {
   backdrop = { ...backdrop, ...saved };
 } catch {}
 
+// Your photo, placed the way you set it in the photo editor: s = zoom (1 = whole photo fits),
+// x / y = where it sits (0-100%). Older photos without a setting just fill the screen.
+function photoCss(photo, f, W, H) {
+  if (!f?.w || !f?.h) return `center / cover no-repeat url("${photo}")`;
+  const k = Math.min(W / f.w, H / f.h) * (f.s || 1);
+  return `${HEX.test(f.avg || '') ? f.avg : '#000'} url("${photo}") ${f.x ?? 50}% ${f.y ?? 50}% / ${Math.round(f.w * k)}px ${Math.round(f.h * k)}px no-repeat`;
+}
+window.addEventListener('resize', () => { if (backdrop.mode === 'photo') applyBackdrop(); });
 const isImageBackdrop = () => backdrop.mode === 'art' || backdrop.mode === 'photo';
 function backdropCss() {
   const b = backdrop;
-  if (b.mode === 'photo') { const photo = safeGet('hw-backdrop-photo'); return photo ? `center / cover no-repeat url("${photo}")` : ''; }
+  if (b.mode === 'photo') { const photo = safeGet('hw-backdrop-photo'); return photo ? photoCss(photo, b.photoFit, window.innerWidth, window.innerHeight) : ''; }
   if (b.mode === 'color') return b.color;
   // The whole drawing, never cropped (artists sign their work), on its own sky color.
   if (b.mode === 'art') { const a = artById(b.art); return `${a.avg} url("${a.file}") center / contain no-repeat`; }
@@ -1028,8 +1036,8 @@ function applyBackdrop() {
 }
 function saveBackdrop(changes) {
   backdrop = { ...backdrop, ...changes };
-  const { mode, color, stops, art, dir, fade, textLight, textDark, tintOn, tint, tintStrength, tintFrom } = backdrop;
-  safeSet('hw-backdrop', JSON.stringify({ mode, color, stops, art, dir, fade, textLight, textDark, tintOn, tint, tintStrength, tintFrom }));
+  const { mode, color, stops, art, dir, fade, textLight, textDark, tintOn, tint, tintStrength, tintFrom, photoFit } = backdrop;
+  safeSet('hw-backdrop', JSON.stringify({ mode, color, stops, art, dir, fade, textLight, textDark, tintOn, tint, tintStrength, tintFrom, photoFit }));
   applyBackdrop();
 }
 applyBackdrop();
@@ -1045,7 +1053,7 @@ function contrast() {
   const paperHex = getComputedStyle(document.body).getPropertyValue('--paper').trim();
   const paper = HEX.test(paperHex) ? rgb(paperHex) : [246, 247, 249];
   const b = backdrop;
-  const under = b.mode === 'color' ? rgb(b.color) : b.mode === 'art' ? rgb(artById(b.art).avg) : b.mode === 'gradient' ? [0, 1, 2].map((i) => b.stops.reduce((sum, c) => sum + rgb(c)[i], 0) / b.stops.length) : paper;
+  const under = b.mode === 'color' ? rgb(b.color) : b.mode === 'art' ? rgb(artById(b.art).avg) : b.mode === 'photo' && HEX.test(b.photoFit?.avg || '') ? rgb(b.photoFit.avg) : b.mode === 'gradient' ? [0, 1, 2].map((i) => b.stops.reduce((sum, c) => sum + rgb(c)[i], 0) / b.stops.length) : paper;
   const f = b.mode === 'plain' ? 1 : isImageBackdrop() ? 0 : +b.fade || 0.72;
   const panel = paper.map((v, i) => v * f + under[i] * (1 - f));
   const [x, y] = [lum(rgb(textNow())), lum(panel)].sort((m, n) => n - m);
@@ -1139,6 +1147,7 @@ function backdropCard() {
     ${b.mode === 'art' ? `<div class="art-grid">${ART.map((a) => `<button class="art-tile ${b.art === a.id ? 'on' : ''}" data-action="bd-art" data-art="${a.id}" aria-pressed="${b.art === a.id}">
         <img src="${a.thumb}" alt="" loading="lazy" style="background:${a.avg}"><span>${esc(a.name)}<small>by ${esc(a.by)}</small></span></button>`).join('')}</div>` : ''}
     ${b.mode === 'photo' ? `<div class="row">
+      ${photo ? `<button class="btn" data-action="photo-adjust">Adjust photo</button>` : ''}
       <button class="btn" data-action="bd-upload">${photo ? 'Use a different photo' : 'Choose a photo'}</button>
       ${photo ? `<button class="link-btn" data-action="bd-photo-off">Remove photo</button>` : ''}
     </div>` : ''}
@@ -1184,8 +1193,89 @@ async function photoToDataUrl(file) {
     c.width = Math.round(img.naturalWidth * scale);
     c.height = Math.round(img.naturalHeight * scale);
     c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-    return c.toDataURL('image/jpeg', 0.8);
+    // the photo's average color fills any space around it, so it blends in
+    // (averaged over a 24×24 grid; shrinking straight to 1 pixel just picks the middle)
+    const N = 24, small = document.createElement('canvas'); small.width = small.height = N;
+    small.getContext('2d').drawImage(c, 0, 0, N, N);
+    const px = small.getContext('2d').getImageData(0, 0, N, N).data;
+    const sum = [0, 0, 0];
+    for (let i = 0; i < px.length; i += 4) { sum[0] += px[i]; sum[1] += px[i + 1]; sum[2] += px[i + 2]; }
+    return { data: c.toDataURL('image/jpeg', 0.8), w: c.width, h: c.height, avg: hexOf(...sum.map((v) => v / (N * N))) };
   } finally { URL.revokeObjectURL(url); }
+}
+
+// ---------- photo editor: drag to move, slider to zoom ----------
+// The preview has your screen's shape; the page behind updates live, and Cancel puts it back.
+async function openPhotoEditor() {
+  const photo = safeGet('hw-backdrop-photo');
+  if (!photo) return;
+  let f = { ...(backdrop.photoFit || {}) };
+  if (!f.w || !f.h) { // a photo from before the editor: measure it and start where it was (filling the screen)
+    const img = await new Promise((ok) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = photo; });
+    if (!img) return toast("Couldn't open that photo. Try choosing it again.");
+    const W = innerWidth, H = innerHeight;
+    f = { w: img.naturalWidth, h: img.naturalHeight, avg: '#000000', x: 50, y: 50,
+      s: Math.max(W / img.naturalWidth, H / img.naturalHeight) / Math.min(W / img.naturalWidth, H / img.naturalHeight) };
+  }
+  const before = backdrop.photoFit;
+  const coverS = () => Math.max(innerWidth / f.w, innerHeight / f.h) / Math.min(innerWidth / f.w, innerHeight / f.h);
+  const dlg = document.createElement('dialog');
+  dlg.className = 'photo-editor';
+  dlg.innerHTML = `<h2>Place your photo</h2>
+    <p class="hint">Drag the photo to move it. Use the slider to zoom.</p>
+    <div class="pe-frame" aria-label="Photo preview, drag to move"></div>
+    <label class="bd-fade">Zoom <input type="range" class="pe-zoom" min="100" max="400" step="1"></label>
+    <div class="row pe-presets">
+      <button type="button" class="btn" data-pe="fit">Fit whole photo</button>
+      <button type="button" class="btn" data-pe="fill">Fill screen</button>
+    </div>
+    <div class="dialog-actions"><span class="spacer"></span>
+      <button type="button" class="btn" data-pe="cancel">Cancel</button>
+      <button type="button" class="primary" data-pe="save">Save</button>
+    </div>`;
+  document.body.append(dlg);
+  const frame = dlg.querySelector('.pe-frame'), zoom = dlg.querySelector('.pe-zoom');
+  // preview box: same shape as this screen, as big as fits in the dialog
+  const ratio = innerHeight / innerWidth;
+  const PW = Math.min(360, innerWidth - 80, 300 / ratio), PH = PW * ratio;
+  frame.style.width = `${PW}px`; frame.style.height = `${PH}px`;
+  const draw = () => {
+    f.s = Math.min(4, Math.max(1, f.s)); f.x = Math.min(100, Math.max(0, f.x)); f.y = Math.min(100, Math.max(0, f.y));
+    frame.style.background = photoCss(photo, f, PW, PH);
+    zoom.value = Math.round(f.s * 100);
+    backdrop = { ...backdrop, mode: 'photo', photoFit: { ...f } };
+    applyBackdrop();
+  };
+  // drag: move by how far the pointer went, relative to the free space around the photo
+  let last = null;
+  frame.addEventListener('pointerdown', (e) => { last = [e.clientX, e.clientY]; frame.setPointerCapture(e.pointerId); });
+  frame.addEventListener('pointermove', (e) => {
+    if (!last) return;
+    const k = Math.min(PW / f.w, PH / f.h) * f.s;
+    const fx = PW - f.w * k, fy = PH - f.h * k;
+    if (Math.abs(fx) > 0.5) f.x += ((e.clientX - last[0]) / fx) * 100;
+    if (Math.abs(fy) > 0.5) f.y += ((e.clientY - last[1]) / fy) * 100;
+    last = [e.clientX, e.clientY];
+    draw();
+  });
+  const stop = () => { last = null; };
+  frame.addEventListener('pointerup', stop); frame.addEventListener('pointercancel', stop);
+  zoom.addEventListener('input', () => { f.s = +zoom.value / 100; draw(); });
+  const close = (keep) => {
+    if (keep) saveBackdrop({ mode: 'photo', photoFit: { ...f } });
+    else { backdrop = { ...backdrop, photoFit: before }; applyBackdrop(); }
+    dlg.close(); dlg.remove(); render();
+  };
+  dlg.addEventListener('click', (e) => {
+    const a = e.target.closest('[data-pe]')?.dataset.pe;
+    if (a === 'fit') { f.s = 1; f.x = 50; f.y = 50; draw(); }
+    if (a === 'fill') { f.s = coverS(); f.x = 50; f.y = 50; draw(); }
+    if (a === 'cancel') close(false);
+    if (a === 'save') close(true);
+  });
+  dlg.addEventListener('cancel', (e) => { e.preventDefault(); close(false); });
+  dlg.showModal();
+  draw();
 }
 
 const sgySteps = (cls = 'hint') => `<ol class="${cls}">
@@ -1888,6 +1978,7 @@ document.addEventListener('click', async (e) => {
     case 'bd-stop-remove':
       if (backdrop.stops.length > 2) saveBackdrop({ stops: backdrop.stops.filter((_, i) => i !== +el.dataset.i) });
       render(); break;
+    case 'photo-adjust': openPhotoEditor(); break;
     case 'bd-upload': $('#bd-file')?.click(); break;
     case 'bd-photo-off': safeSet('hw-backdrop-photo', null); saveBackdrop({ mode: 'plain' }); render(); break;
     case 'text-reset': saveBackdrop({ [textKey()]: '' }); render(); break;
@@ -2059,10 +2150,11 @@ document.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const data = await photoToDataUrl(file);
-      localStorage.setItem('hw-backdrop-photo', data);
-      saveBackdrop({ mode: 'photo' });
+      const ph = await photoToDataUrl(file);
+      localStorage.setItem('hw-backdrop-photo', ph.data);
+      saveBackdrop({ mode: 'photo', photoFit: { w: ph.w, h: ph.h, avg: ph.avg, s: 1, x: 50, y: 50 } });
       render();
+      openPhotoEditor(); // place it right away
     } catch {
       toast("That photo couldn't be used. Try a smaller JPG or PNG.");
     }

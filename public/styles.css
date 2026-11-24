@@ -558,3 +558,9 @@ body.force-light {
 }
 /* On a picture, gray text needs more contrast than on plain white */
 body.force-light.bd-image { --ink-2: #434b5c; --ink-3: #5f6779; }
+.photo-editor { width: min(440px, calc(100vw - 32px)); }
+.photo-editor h2 { margin: 0 0 4px; }
+.pe-frame { margin: 12px auto 4px; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--rule), 0 4px 18px rgba(0,0,0,.18); cursor: grab; touch-action: none; user-select: none; }
+.pe-frame:active { cursor: grabbing; }
+.pe-zoom { width: 100%; accent-color: var(--pen); }
+.pe-presets { margin: 12px 0 4px; }
