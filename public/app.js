@@ -968,7 +968,7 @@ const MAX_STOPS = 6;
 // thumbnail in public/backdrops/, then add a line here. main = the color "Match to one color" uses;
 // avg = its average color (for the text readability warning).
 const ART = [
-  { id: 'sky-birds', name: 'Sky and birds', by: 'a friend', file: '/backdrops/sky-birds.jpg', thumb: '/backdrops/sky-birds-thumb.jpg', main: '#9fb4e6', avg: '#e7edfa', tone: 'light' },
+  { id: 'sky-birds', name: 'Sky and birds', by: 'Kelly Zhang', file: '/backdrops/sky-birds.jpg', thumb: '/backdrops/sky-birds-thumb.jpg', main: '#9fb4e6', avg: '#e7edfa', tone: 'light' },
 ];
 const artById = (id) => ART.find((a) => a.id === id) || ART[0];
 // A light drawing always uses the site's light look (light boxes, dark text), even in dark mode.
@@ -1001,14 +1001,14 @@ function photoCss(photo, f, W, H) {
   const k = Math.min(W / f.w, H / f.h) * (f.s || 1);
   return `${HEX.test(f.avg || '') ? f.avg : '#000'} url("${photo}") ${f.x ?? 50}% ${f.y ?? 50}% / ${Math.round(f.w * k)}px ${Math.round(f.h * k)}px no-repeat`;
 }
-window.addEventListener('resize', () => { if (backdrop.mode === 'photo') applyBackdrop(); });
+window.addEventListener('resize', () => { if (backdrop.mode === 'photo' || backdrop.mode === 'art') applyBackdrop(); });
 const isImageBackdrop = () => backdrop.mode === 'art' || backdrop.mode === 'photo';
 function backdropCss() {
   const b = backdrop;
   if (b.mode === 'photo') { const photo = safeGet('hw-backdrop-photo'); return photo ? photoCss(photo, b.photoFit, window.innerWidth, window.innerHeight) : ''; }
   if (b.mode === 'color') return b.color;
-  // The whole drawing, never cropped (artists sign their work), on its own sky color.
-  if (b.mode === 'art') { const a = artById(b.art); return `${a.avg} url("${a.file}") center / contain no-repeat`; }
+  // Tall screens (phones) show the whole drawing; wide screens are filled (the artist is credited in Settings).
+  if (b.mode === 'art') { const a = artById(b.art); return `${a.avg} url("${a.file}") center / ${window.innerWidth < window.innerHeight ? 'contain' : 'cover'} no-repeat`; }
   if (b.mode === 'gradient') return b.dir === 'radial' ? `radial-gradient(circle at center, ${b.stops.join(', ')})` : `linear-gradient(${Number(b.dir) || 135}deg, ${b.stops.join(', ')})`;
   return '';
 }
