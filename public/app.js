@@ -994,6 +994,26 @@ try {
   backdrop = { ...backdrop, ...saved };
 } catch {}
 
+// The saved photo as a short blob: link. Putting the whole photo (often 1 MB+ of text) straight
+// into the page's style works on computers but iPhone Safari can silently skip it.
+let photoBlob = { data: null, url: null };
+function photoUrl() {
+  const data = safeGet('hw-backdrop-photo');
+  if (!data) return null;
+  if (photoBlob.data !== data) {
+    if (photoBlob.url && photoBlob.url !== photoBlob.data) URL.revokeObjectURL(photoBlob.url);
+    let url = data;
+    try {
+      const [head, b64] = data.split(',');
+      const bin = atob(b64), bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      url = URL.createObjectURL(new Blob([bytes], { type: /data:([^;,]+)/.exec(head)?.[1] || 'image/jpeg' }));
+    } catch {}
+    photoBlob = { data, url };
+  }
+  return photoBlob.url;
+}
+
 // Your photo, placed the way you set it in the photo editor: s = zoom (1 = whole photo fits),
 // x / y = where it sits (0-100%). Older photos without a setting just fill the screen.
 function photoCss(photo, f, W, H) {
@@ -1005,7 +1025,7 @@ window.addEventListener('resize', () => { if (backdrop.mode === 'photo' || backd
 const isImageBackdrop = () => backdrop.mode === 'art' || backdrop.mode === 'photo';
 function backdropCss() {
   const b = backdrop;
-  if (b.mode === 'photo') { const photo = safeGet('hw-backdrop-photo'); return photo ? photoCss(photo, b.photoFit, window.innerWidth, window.innerHeight) : ''; }
+  if (b.mode === 'photo') { const photo = photoUrl(); return photo ? photoCss(photo, b.photoFit, window.innerWidth, window.innerHeight) : ''; }
   if (b.mode === 'color') return b.color;
   // Tall screens (phones) show the whole drawing; wide screens are filled (the artist is credited in Settings).
   // The artist's drawing as is: phones (tall screens) show all of it; wide screens are filled.
@@ -1189,7 +1209,7 @@ async function photoToDataUrl(file) {
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = url; });
-    const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const scale = Math.min(1, 1440 / Math.max(img.naturalWidth, img.naturalHeight));
     const c = document.createElement('canvas');
     c.width = Math.round(img.naturalWidth * scale);
     c.height = Math.round(img.naturalHeight * scale);
@@ -1208,7 +1228,7 @@ async function photoToDataUrl(file) {
 // ---------- photo editor: drag to move, slider to zoom ----------
 // The preview has your screen's shape; the page behind updates live, and Cancel puts it back.
 async function openPhotoEditor() {
-  const photo = safeGet('hw-backdrop-photo');
+  const photo = photoUrl();
   if (!photo) return;
   let f = { ...(backdrop.photoFit || {}) };
   if (!f.w || !f.h) { // a photo from before the editor: measure it and start where it was (filling the screen)
